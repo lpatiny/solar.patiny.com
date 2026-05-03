@@ -3,36 +3,39 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import Postgrator from 'postgrator';
+
+import type { MeteoReading } from '../services/meteoStationService.ts';
+
 import { TypedStatementSync } from './TypedStatementSync.ts';
-import { migrations } from './migrations.ts';
 import type {
   AggregatedReadingRow,
-  ComputedDailyStatsRow,
-  DailyStatsRow,
+  AggregatedSolarwebRow,
   ReadingRow,
+  SolarwebReadingRow,
+  WeatherReadingRow,
 } from './rows.ts';
 
 export class Database {
   readonly #slowQueryLog: string;
+  readonly #sqlite: DatabaseSync;
+  readonly #stmtCache = new Map<string, TypedStatementSync<unknown>>();
   readonly #insertReading: TypedStatementSync<ReadingRow>;
   readonly #queryReadingsRaw: TypedStatementSync<ReadingRow>;
   readonly #queryReadingsHourly: TypedStatementSync<AggregatedReadingRow>;
   readonly #queryReadingsDaily: TypedStatementSync<AggregatedReadingRow>;
-  readonly #queryDailyStats: TypedStatementSync<DailyStatsRow>;
-  readonly #upsertDailyStats: TypedStatementSync<DailyStatsRow>;
-  readonly #queryLatestReading: TypedStatementSync<ReadingRow>;
-  readonly #computeDailyStats: TypedStatementSync<ComputedDailyStatsRow>;
+  readonly #upsertSolarwebReading: TypedStatementSync<SolarwebReadingRow>;
+  readonly #querySolarwebHourly: TypedStatementSync<AggregatedSolarwebRow>;
+  readonly #querySolarwebDaily: TypedStatementSync<AggregatedSolarwebRow>;
+  readonly #querySolarwebMonthly: TypedStatementSync<AggregatedSolarwebRow>;
+  readonly #upsertWeatherReading: TypedStatementSync<WeatherReadingRow>;
+  readonly #queryWeatherReadings: TypedStatementSync<WeatherReadingRow>;
 
-  public constructor(dbPath: string) {
-    mkdirSync(dirname(dbPath), { recursive: true });
+  private constructor(dbPath: string, sqlite: DatabaseSync) {
     this.#slowQueryLog = join(dirname(dbPath), '..', 'slow-queries.log');
-    const sqlite = new DatabaseSync(dbPath);
-    sqlite.exec('PRAGMA journal_mode = WAL');
-    sqlite.exec('PRAGMA synchronous = NORMAL');
-    this.#runMigrations(sqlite);
+    this.#sqlite = sqlite;
 
     this.#insertReading = this.#prepare<ReadingRow>(
-      sqlite,
       `INSERT INTO readings (
          timestamp, production_w, grid_w, battery_w, consumption_w, battery_soc,
          ac_power_w, voltage_a_v, voltage_b_v, voltage_c_v, frequency_hz,
@@ -42,12 +45,10 @@ export class Database {
     );
 
     this.#queryReadingsRaw = this.#prepare<ReadingRow>(
-      sqlite,
       `SELECT * FROM readings WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp`,
     );
 
     this.#queryReadingsHourly = this.#prepare<AggregatedReadingRow>(
-      sqlite,
       `SELECT
          (timestamp / 3600) * 3600 AS bucket,
          AVG(production_w) AS production_w,
@@ -64,7 +65,6 @@ export class Database {
     );
 
     this.#queryReadingsDaily = this.#prepare<AggregatedReadingRow>(
-      sqlite,
       `SELECT
          (timestamp / 86400) * 86400 AS bucket,
          AVG(production_w) AS production_w,
@@ -80,84 +80,125 @@ export class Database {
        ORDER BY bucket`,
     );
 
-    this.#queryDailyStats = this.#prepare<DailyStatsRow>(
-      sqlite,
-      `SELECT * FROM daily_stats WHERE date BETWEEN ? AND ? ORDER BY date`,
+    this.#upsertSolarwebReading = this.#prepare<SolarwebReadingRow>(
+      `INSERT INTO solarweb_readings
+         (timestamp, production_w, export_w, import_w, self_consumption_w, battery_w, battery_soc_pct)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(timestamp) DO UPDATE SET
+         production_w    = excluded.production_w,
+         export_w        = excluded.export_w,
+         import_w        = excluded.import_w,
+         self_consumption_w = excluded.self_consumption_w,
+         battery_w       = excluded.battery_w,
+         battery_soc_pct = COALESCE(excluded.battery_soc_pct, battery_soc_pct)`,
     );
 
-    this.#upsertDailyStats = this.#prepare<DailyStatsRow>(
-      sqlite,
-      `INSERT INTO daily_stats (date, production_kwh, export_kwh, import_kwh, self_consumption_kwh)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(date) DO UPDATE SET
-         production_kwh = excluded.production_kwh,
-         export_kwh = excluded.export_kwh,
-         import_kwh = excluded.import_kwh,
-         self_consumption_kwh = excluded.self_consumption_kwh`,
+    this.#querySolarwebHourly = this.#prepare<AggregatedSolarwebRow>(
+      `SELECT
+         (timestamp / 3600) * 3600 AS bucket,
+         AVG(production_w) AS production_w,
+         AVG(import_w - export_w) AS grid_w,
+         AVG(battery_w) AS battery_w,
+         AVG(self_consumption_w + import_w) AS consumption_w,
+         AVG(CASE WHEN battery_soc_pct > 0 THEN battery_soc_pct ELSE NULL END) AS battery_soc_max,
+         NULL AS battery_soc_min
+       FROM solarweb_readings
+       WHERE timestamp BETWEEN ? AND ?
+       GROUP BY (timestamp / 3600)
+       ORDER BY bucket`,
     );
 
-    this.#queryLatestReading = this.#prepare<ReadingRow>(
-      sqlite,
-      `SELECT * FROM readings ORDER BY timestamp DESC LIMIT 1`,
+    this.#querySolarwebDaily = this.#prepare<AggregatedSolarwebRow>(
+      `SELECT
+         (timestamp / 86400) * 86400 + 43200 AS bucket,
+         AVG(production_w) AS production_w,
+         AVG(import_w - export_w) AS grid_w,
+         AVG(battery_w) AS battery_w,
+         AVG(self_consumption_w + import_w) AS consumption_w,
+         MAX(battery_soc_pct) AS battery_soc_max,
+         MIN(battery_soc_pct) AS battery_soc_min
+       FROM solarweb_readings
+       WHERE timestamp BETWEEN ? AND ?
+       GROUP BY (timestamp / 86400)
+       ORDER BY bucket`,
     );
 
-    this.#computeDailyStats = this.#prepare<ComputedDailyStatsRow>(
-      sqlite,
-      `WITH raw AS (
+    this.#querySolarwebMonthly = this.#prepare<AggregatedSolarwebRow>(
+      `SELECT
+         CAST(strftime('%s', strftime('%Y-%m-15', day_bucket, 'unixepoch')) AS INTEGER) AS bucket,
+         AVG(production_w) AS production_w,
+         AVG(grid_w) AS grid_w,
+         AVG(battery_w) AS battery_w,
+         AVG(consumption_w) AS consumption_w,
+         AVG(battery_soc_max) AS battery_soc_max,
+         AVG(battery_soc_min) AS battery_soc_min
+       FROM (
          SELECT
-           strftime('%Y-%m-%d', timestamp, 'unixepoch') AS date,
-           production_w,
-           grid_w,
-           LEAD(timestamp) OVER (ORDER BY timestamp) - timestamp AS gap_s
-         FROM readings
-         WHERE strftime('%Y-%m-%d', timestamp, 'unixepoch') = ?
-       ),
-       intervals AS (
-         SELECT
-           date,
-           production_w,
-           grid_w,
-           CASE WHEN gap_s IS NULL OR gap_s > 120 THEN 30 ELSE gap_s END AS interval_s
-         FROM raw
+           (timestamp / 86400) * 86400 AS day_bucket,
+           AVG(production_w) AS production_w,
+           AVG(import_w - export_w) AS grid_w,
+           AVG(battery_w) AS battery_w,
+           AVG(self_consumption_w + import_w) AS consumption_w,
+           MAX(battery_soc_pct) AS battery_soc_max,
+           MIN(battery_soc_pct) AS battery_soc_min
+         FROM solarweb_readings
+         WHERE timestamp BETWEEN ? AND ?
+         GROUP BY day_bucket
        )
-       SELECT
-         date,
-         SUM(production_w * interval_s) / 3600000.0 AS production_kwh,
-         SUM(CASE WHEN grid_w < 0 THEN -grid_w * interval_s ELSE 0 END) / 3600000.0 AS export_kwh,
-         SUM(CASE WHEN grid_w > 0 THEN grid_w * interval_s ELSE 0 END) / 3600000.0 AS import_kwh
-       FROM intervals
-       GROUP BY date`,
+       GROUP BY strftime('%Y-%m', day_bucket, 'unixepoch')
+       ORDER BY bucket`,
+    );
+
+    this.#upsertWeatherReading = this.#prepare<WeatherReadingRow>(
+      `INSERT INTO weather_readings (timestamp, station, global_radiation_w, temperature_c, humidity_pct, precipitation_mm, sunshine_min)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(timestamp, station) DO UPDATE SET
+         global_radiation_w = COALESCE(excluded.global_radiation_w, global_radiation_w),
+         temperature_c      = COALESCE(excluded.temperature_c, temperature_c),
+         humidity_pct       = COALESCE(excluded.humidity_pct, humidity_pct),
+         precipitation_mm   = COALESCE(excluded.precipitation_mm, precipitation_mm),
+         sunshine_min       = COALESCE(excluded.sunshine_min, sunshine_min)`,
+    );
+
+    this.#queryWeatherReadings = this.#prepare<WeatherReadingRow>(
+      `SELECT * FROM weather_readings WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp`,
     );
   }
 
-  #prepare<T>(sqlite: DatabaseSync, sql: string): TypedStatementSync<T> {
+  static async open(dbPath: string): Promise<Database> {
+    mkdirSync(dirname(dbPath), { recursive: true });
+    const sqlite = new DatabaseSync(dbPath);
+    sqlite.exec('PRAGMA journal_mode = WAL');
+    sqlite.exec('PRAGMA synchronous = NORMAL');
+
+    const postgrator = new Postgrator({
+      migrationPattern: join(import.meta.dirname, 'migrations/*'),
+      driver: 'sqlite3',
+      execQuery: async (query) => ({ rows: sqlite.prepare(query).all() }),
+      execSqlScript: async (sql) => {
+        sqlite.exec(sql);
+      },
+    });
+    await postgrator.migrate();
+
+    return new Database(dbPath, sqlite);
+  }
+
+  #prepare<T>(sql: string): TypedStatementSync<T> {
     const trimmed = sql.trim();
-    return new TypedStatementSync<T>(sqlite.prepare(trimmed), (ms) => {
+    return new TypedStatementSync<T>(this.#sqlite.prepare(trimmed), (ms) => {
       const line = `${new Date().toISOString()} [${ms.toFixed(1)}ms] ${trimmed.slice(0, 120)}\n`;
       appendFileSync(this.#slowQueryLog, line);
     });
   }
 
-  #runMigrations(sqlite: DatabaseSync): void {
-    sqlite.exec(
-      `CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY)`,
-    );
-    const applied = new Set(
-      (
-        sqlite.prepare(`SELECT id FROM schema_migrations`).all() as Array<{
-          id: number;
-        }>
-      ).map((r) => r.id),
-    );
-    const insertMigration = sqlite.prepare(
-      `INSERT INTO schema_migrations (id) VALUES (?)`,
-    );
-    for (const migration of migrations) {
-      if (!applied.has(migration.id)) {
-        sqlite.exec(migration.sql);
-        insertMigration.run(migration.id);
-      }
+  public statement<T>(sql: string): TypedStatementSync<T> {
+    let stmt = this.#stmtCache.get(sql) as TypedStatementSync<T> | undefined;
+    if (!stmt) {
+      stmt = this.#prepare<T>(sql);
+      this.#stmtCache.set(sql, stmt as TypedStatementSync<unknown>);
     }
+    return stmt;
   }
 
   public insertReading(
@@ -210,35 +251,109 @@ export class Database {
     return this.#queryReadingsDaily.all(from, to);
   }
 
-  public queryDailyStats(from: string, to: string): DailyStatsRow[] {
-    return this.#queryDailyStats.all(from, to);
+  /**
+   * Batch-insert/update 5-minute SolarWeb readings inside a single transaction.
+   * @param rows
+   */
+  public upsertSolarwebReadings(rows: SolarwebReadingRow[]): void {
+    if (rows.length === 0) return;
+    this.#sqlite.exec('BEGIN');
+    try {
+      for (const row of rows) {
+        this.#upsertSolarwebReading.run(
+          row.timestamp,
+          row.production_w,
+          row.export_w,
+          row.import_w,
+          row.self_consumption_w,
+          row.battery_w,
+          row.battery_soc_pct,
+        );
+      }
+      this.#sqlite.exec('COMMIT');
+    } catch (error) {
+      this.#sqlite.exec('ROLLBACK');
+      throw error;
+    }
   }
 
-  public upsertDailyStats(
-    date: string,
-    production_kwh: number,
-    export_kwh: number,
-    import_kwh: number,
-    self_consumption_kwh: number,
-  ): void {
-    this.#upsertDailyStats.run(
-      date,
-      production_kwh,
-      export_kwh,
-      import_kwh,
-      self_consumption_kwh,
-    );
+  public querySolarwebHourly(
+    from: number,
+    to: number,
+  ): AggregatedSolarwebRow[] {
+    return this.#querySolarwebHourly.all(from, to);
   }
 
-  public queryLatestReading(): ReadingRow | undefined {
-    return this.#queryLatestReading.get();
+  public querySolarwebDaily(from: number, to: number): AggregatedSolarwebRow[] {
+    return this.#querySolarwebDaily.all(from, to);
   }
 
-  public computeDailyStats(date: string): ComputedDailyStatsRow | undefined {
-    return this.#computeDailyStats.get(date);
+  public querySolarwebMonthly(
+    from: number,
+    to: number,
+  ): AggregatedSolarwebRow[] {
+    return this.#querySolarwebMonthly.all(from, to);
+  }
+
+  public getOldestTimestamp(): number | null {
+    const sw =
+      this.statement<{ ts: number | null }>(
+        'SELECT MIN(timestamp) AS ts FROM solarweb_readings',
+      ).get()?.ts ?? null;
+    const local =
+      this.statement<{ ts: number | null }>(
+        'SELECT MIN(timestamp) AS ts FROM readings',
+      ).get()?.ts ?? null;
+    if (sw === null) return local;
+    if (local === null) return sw;
+    return Math.min(sw, local);
+  }
+
+  /**
+   * Batch-upsert MeteoSwiss weather readings inside a single transaction.
+   * @param readings
+   */
+  public upsertWeatherReadings(readings: MeteoReading[]): void {
+    if (readings.length === 0) return;
+    this.#sqlite.exec('BEGIN');
+    try {
+      for (const r of readings) {
+        this.#upsertWeatherReading.run(
+          r.timestamp,
+          r.station,
+          r.globalRadiationWm2,
+          r.temperatureC,
+          r.humidityPct,
+          r.precipitationMm,
+          r.sunshineMin,
+        );
+      }
+      this.#sqlite.exec('COMMIT');
+    } catch (error) {
+      this.#sqlite.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  public queryWeatherReadings(from: number, to: number): WeatherReadingRow[] {
+    return this.#queryWeatherReadings.all(from, to);
+  }
+
+  public getSetting(key: string): string | null {
+    const row = this.statement<{ value: string }>(
+      'SELECT value FROM settings WHERE key = ?',
+    ).get(key);
+    return row?.value ?? null;
+  }
+
+  public upsertSetting(key: string, value: string): void {
+    this.statement(
+      `INSERT INTO settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    ).run(key, value);
   }
 }
 
-export const db = new Database(
+export const db = await Database.open(
   join(import.meta.dirname, '../../../data/sqlite3/solar.db'),
 );

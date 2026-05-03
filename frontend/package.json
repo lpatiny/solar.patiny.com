@@ -12,6 +12,7 @@
   "dependencies": {
     "@blueprintjs/core": "^6.12.1",
     "@blueprintjs/icons": "^6.9.1",
+    "@nivo/bar": "^0.99.0",
     "@nivo/core": "^0.99.0",
     "@nivo/line": "^0.99.0",
     "react": "^19.1.0",
@@ -22,6 +23,7 @@
     "@types/react": "^19.1.5",
     "@types/react-dom": "^19.1.5",
     "@vitejs/plugin-react": "^4.4.1",
+    "@zakodium/tsconfig": "^1.0.5",
     "vite": "^6.3.5"
   },
   "volta": {

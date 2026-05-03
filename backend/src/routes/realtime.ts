@@ -1,5 +1,5 @@
 /* eslint-disable camelcase -- TypeBox schema keys match JSON API snake_case */
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 
 import { getCurrentReading } from '../services/poller.ts';
 import type { FastifyTyped } from '../types.ts';
@@ -40,6 +40,7 @@ const ErrorResponse = Type.Object({ error: Type.String() });
 
 /**
  * Real-time power flow from the Fronius inverter (served from memory cache).
+ * @param fastify
  */
 export default async function realtimeRoutes(fastify: FastifyTyped) {
   fastify.get(

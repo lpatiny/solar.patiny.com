@@ -5,11 +5,13 @@ import Fastify from 'fastify';
 import batteryRoutes from './routes/battery.ts';
 import configRoutes from './routes/config.ts';
 import debugModbusRoutes from './routes/debugModbus.ts';
+import forecastRoutes from './routes/forecast.ts';
 import healthRoutes from './routes/health.ts';
 import historyRoutes from './routes/history.ts';
 import realtimeRoutes from './routes/realtime.ts';
 import solarwebRoutes from './routes/solarweb.ts';
 import statsRoutes from './routes/stats.ts';
+import weatherRoutes from './routes/weather.ts';
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -19,12 +21,14 @@ export async function buildApp() {
   await fastify.register(fastifyCors, { origin: true });
   await fastify.register(configRoutes);
   await fastify.register(debugModbusRoutes);
+  await fastify.register(forecastRoutes);
   await fastify.register(healthRoutes);
   await fastify.register(realtimeRoutes);
   await fastify.register(batteryRoutes);
   await fastify.register(historyRoutes);
   await fastify.register(solarwebRoutes);
   await fastify.register(statsRoutes);
+  await fastify.register(weatherRoutes);
 
   return fastify;
 }

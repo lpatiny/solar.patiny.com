@@ -1,4 +1,4 @@
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 
 import { readChunk, scanSunSpec, withClient } from '../services/modbusScan.ts';
 import type { FastifyTyped } from '../types.ts';
@@ -40,6 +40,7 @@ const ModelDumpResult = Type.Object({
 /**
  * Scans the Modbus device SunSpec map to discover supported models and register
  * addresses. Used for debugging register mapping issues.
+ * @param fastify
  */
 export default async function debugModbusRoutes(fastify: FastifyTyped) {
   fastify.get(

@@ -21,7 +21,9 @@
   "devDependencies": {
     "concurrently": "^9.2.1",
     "eslint": "^9",
-    "eslint-config-zakodium": "^20.0.0",
+    "eslint-config-cheminfo-react": "^20.0.1",
+    "eslint-config-cheminfo-typescript": "^22.0.0",
+    "globals": "^17.5.0",
     "prettier": "^3.8.3",
     "typescript": "^5"
   },

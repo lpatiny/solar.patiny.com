@@ -1,5 +1,5 @@
 /* eslint-disable camelcase -- TypeBox schema keys match JSON API snake_case */
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 
 import {
   getCurrentBatteryControl,
@@ -30,6 +30,7 @@ const BatteryControlBody = Type.Object({
 
 /**
  * Battery status and control routes.
+ * @param fastify
  */
 export default async function batteryRoutes(fastify: FastifyTyped) {
   fastify.get(

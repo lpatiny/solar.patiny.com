@@ -1,5 +1,17 @@
+# Cloudflare Tunnel deployment — no port published on the host.
+#
+# Cloudflare dashboard (https://dash.cloudflare.com):
+#   Networking → Tunnels → Create a tunnel → Cloudflared connector →
+#   copy the token into .env as TUNNEL_TOKEN=... → open the tunnel →
+#   Published applications tab → add application with
+#   Service = HTTP, URL = solar-monitoring:3000 (or your PORT value).
+#
+# Copy this file to compose.yaml and run: docker compose up -d
+
 services:
   solar-monitoring:
+    # Use the released image by default. To build locally instead, run:
+    #   docker compose up -d --build
     image: ghcr.io/cheminfo/solar-monitoring:latest
     build: .
     env_file: .env

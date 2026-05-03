@@ -1,5 +1,7 @@
 services:
   solar-monitoring:
+    # Use the released image by default. To build locally instead, run:
+    #   docker compose up -d --build
     image: ghcr.io/cheminfo/solar-monitoring:latest
     build: .
     env_file: .env

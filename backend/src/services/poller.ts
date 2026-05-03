@@ -3,18 +3,20 @@ import { db } from '../db/Database.ts';
 import type { RealtimeReading } from '../types.ts';
 
 import { fetchPowerFlow } from './fronius.ts';
-import { syncRecentDaysFromReadings } from './localStats.ts';
+import { fetchStationReadings } from './meteoStationService.ts';
 import { closeModbusConnections, readModbusData } from './modbusReader.ts';
 import { syncRecentDays } from './solarweb.ts';
+import { scrapeRecentDays } from './solarwebScraper.ts';
 
 interface Logger {
   info: (msg: string) => void;
   error: (obj: unknown, msg?: string) => void;
 }
 
-const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 10_000);
+const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 5_000);
 const STALE_THRESHOLD_MS = 30_000;
 const MODBUS_ENABLED = process.env.MODBUS_ENABLED === 'true';
+const WEATHER_INTERVAL_MS = 10 * 60 * 1000;
 
 let currentReading: RealtimeReading | null = null;
 let lastPollTime = 0;
@@ -22,6 +24,7 @@ let modbusLastError: string | null = null;
 let lastValidSoc: number | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let solarWebTimer: ReturnType<typeof setInterval> | null = null;
+let weatherTimer: ReturnType<typeof setInterval> | null = null;
 let log: Logger = {
   info: (msg) => process.stdout.write(`${msg}\n`),
   error: (obj, msg) => process.stderr.write(`${msg ?? String(obj)}\n`),
@@ -107,6 +110,17 @@ async function poll(): Promise<void> {
   }
 }
 
+async function pollWeather(): Promise<void> {
+  try {
+    const readings = await fetchStationReadings();
+    if (readings.length > 0) {
+      db.upsertWeatherReadings(readings);
+    }
+  } catch (error) {
+    log.error(error, '[poller] Weather poll failed');
+  }
+}
+
 export function startPoller(logger: Logger): void {
   log = logger;
   log.info(
@@ -114,19 +128,22 @@ export function startPoller(logger: Logger): void {
   );
   void poll();
   pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
-  syncRecentDaysFromReadings();
   void syncRecentDays();
+  void scrapeRecentDays();
   solarWebTimer = setInterval(
     () => {
-      syncRecentDaysFromReadings();
       void syncRecentDays();
+      void scrapeRecentDays();
     },
     60 * 60 * 1000,
   );
+  void pollWeather();
+  weatherTimer = setInterval(() => void pollWeather(), WEATHER_INTERVAL_MS);
 }
 
 export function stopPoller(): void {
   if (pollTimer) clearInterval(pollTimer);
   if (solarWebTimer) clearInterval(solarWebTimer);
+  if (weatherTimer) clearInterval(weatherTimer);
   closeModbusConnections();
 }

@@ -1,5 +1,4 @@
-/* eslint-disable camelcase, @typescript-eslint/naming-convention -- SolarWeb API and DB fields use snake_case */
-import { db } from '../db/Database.ts';
+/* eslint-disable camelcase, @typescript-eslint/naming-convention -- SolarWeb API fields use snake_case */
 
 const BASE_URL = 'https://api.solarweb.com/swqapi';
 const PV_SYSTEM_ID = process.env.SOLARWEB_PV_SYSTEM_ID;
@@ -118,29 +117,12 @@ async function fetchDayData(date: string): Promise<SolarWebDayData | null> {
   );
 }
 
-function sumValues(values: Record<string, number> | undefined): number {
-  if (!values) return 0;
-  return Object.values(values).reduce((a, b) => a + b, 0);
-}
-
 // ─── Sync functions ───────────────────────────────────────────────────────────
 
 export async function syncDay(date: string): Promise<void> {
-  const data = await fetchDayData(date);
-  if (!data) return;
-
-  const production_kwh = sumValues(data.Data.EnergyProduction?.Values) / 1000;
-  const export_kwh = sumValues(data.Data.EnergyFeedIn?.Values) / 1000;
-  const import_kwh = sumValues(data.Data.EnergyGrid?.Values) / 1000;
-  const self_consumption_kwh = production_kwh - export_kwh;
-
-  db.upsertDailyStats(
-    date,
-    production_kwh,
-    export_kwh,
-    import_kwh,
-    Math.max(0, self_consumption_kwh),
-  );
+  // api.solarweb.com is not accessible for most deployments; this is a no-op stub.
+  // Historical data is scraped via solarwebScraper.ts instead.
+  await fetchDayData(date);
 }
 
 export async function syncRecentDays(): Promise<void> {

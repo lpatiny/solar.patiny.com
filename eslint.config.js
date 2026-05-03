@@ -1,20 +1,16 @@
-import { defineConfig } from 'eslint/config';
-import { globals } from 'eslint-config-zakodium';
-import react from 'eslint-config-zakodium/react';
-import ts from 'eslint-config-zakodium/ts';
-import unicorn from 'eslint-config-zakodium/unicorn';
+import { defineConfig, globalIgnores } from 'eslint/config';
+import react from 'eslint-config-cheminfo-react/base';
+import cheminfo from 'eslint-config-cheminfo-typescript';
+import globals from 'globals';
 
-export default defineConfig(
-  ...ts,
-  ...unicorn,
-  {
-    ignores: [
-      '**/dist',
-      '**/node_modules',
-      'backend/coverage',
-      'backend/vitest.config.ts',
-    ],
-  },
+export default defineConfig([
+  globalIgnores([
+    '**/dist',
+    '**/node_modules',
+    'backend/coverage',
+    'backend/vitest.config.ts',
+  ]),
+  cheminfo,
   {
     rules: {
       'new-cap': ['error', { capIsNew: false }],
@@ -30,6 +26,6 @@ export default defineConfig(
   },
   {
     files: ['frontend/**'],
-    extends: [...react],
+    extends: react,
   },
-);
+]);

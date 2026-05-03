@@ -1,0 +1,45 @@
+# Traefik reverse-proxy deployment — no port published on the host.
+# Requires a Traefik instance on an external Docker network named "traefik"
+# with a "websecure" entrypoint and a "letsencrypt" cert resolver.
+#
+# Copy this file to compose.yaml and adjust the Host label to your hostname,
+# then run: docker compose up -d
+
+services:
+  solar-monitoring:
+    # Use the released image by default. To build locally instead, run:
+    #   docker compose up -d --build
+    image: ghcr.io/cheminfo/solar-monitoring:latest
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    networks:
+      - default
+      - traefik
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.solar-monitoring.rule=Host(`solar-monitoring.cheminfo.org`)'
+      - 'traefik.http.routers.solar-monitoring.entrypoints=websecure'
+      - 'traefik.http.routers.solar-monitoring.tls.certresolver=letsencrypt'
+      - 'traefik.http.services.solar-monitoring.loadbalancer.server.port=${PORT:-3000}'
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 256
+    ulimits:
+      core: 0
+    logging:
+      options:
+        max-size: '10m'
+        max-file: '3'
+    restart: unless-stopped
+
+networks:
+  traefik:
+    external: true
