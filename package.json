@@ -1,0 +1,31 @@
+{
+  "name": "solar-monitoring",
+  "version": "0.0.0",
+  "description": "Solar energy monitoring and control dashboard for Fronius inverter with battery",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "check-types": "npm run check-types -w backend && npm run check-types -w frontend",
+    "dev": "lsof -ti:3000,5173 | xargs kill -9 2>/dev/null; concurrently --kill-others --kill-others-on-fail \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "eslint": "eslint --cache .",
+    "eslint-fix": "eslint --cache --fix .",
+    "prettier": "prettier --check .",
+    "prettier-write": "prettier --write .",
+    "test": "npm run check-types && npm run eslint && npm run prettier && npm run test-backend",
+    "test-backend": "npm run test -w backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "eslint": "^9",
+    "eslint-config-zakodium": "^20.0.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5"
+  },
+  "volta": {
+    "node": "24.14.0"
+  }
+}

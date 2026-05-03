@@ -1,0 +1,100 @@
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-raised: #263347;
+  --border: #334155;
+  --text: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --solar: #fbbf24;
+  --grid-export: #34d399;
+  --grid-import: #f87171;
+  --battery: #60a5fa;
+  --consumption: #c084fc;
+  --radius: 12px;
+}
+
+/* Blueprint.js resets */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Suppress Blueprint focus rings from click navigation */
+*:focus,
+*:focus-visible {
+  outline: none !important;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* Override Blueprint tab bar to match dark theme */
+.bp5-tab-list {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border) !important;
+  padding: 0 !important;
+}
+
+.bp5-tab {
+  color: var(--text-secondary) !important;
+  font-size: 13px !important;
+}
+
+.bp5-tab[aria-selected='true'] {
+  color: var(--text) !important;
+}
+
+.bp5-tab-indicator-wrapper .bp5-tab-indicator {
+  background-color: var(--solar) !important;
+}
+
+.bp5-tab-panel {
+  margin-top: 0 !important;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.card-title {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.value-large {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.value-unit {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.stale-badge {
+  background: #451a03;
+  border-radius: 4px;
+  color: #fb923c;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+}

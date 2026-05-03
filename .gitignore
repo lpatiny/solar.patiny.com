@@ -1,0 +1,12 @@
+node_modules/
+compose.yaml
+coverage/
+dist/
+*.log
+.env
+.env.local
+.eslintcache
+*.tsbuildinfo
+.DS_Store
+.claude
+data/

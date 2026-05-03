@@ -1,0 +1,44 @@
+services:
+  solar-monitoring:
+    image: ghcr.io/cheminfo/solar-monitoring:latest
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 256
+    ulimits:
+      core: 0
+    logging:
+      options:
+        max-size: '10m'
+        max-file: '3'
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    env_file: .env
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    cpus: 1
+    pids_limit: 64
+    ulimits:
+      core: 0
+    logging:
+      options:
+        max-size: '5m'
+        max-file: '2'
+    restart: unless-stopped

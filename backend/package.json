@@ -1,0 +1,36 @@
+{
+  "name": "solar-monitoring-backend",
+  "version": "0.0.0",
+  "description": "Solar energy monitoring backend API",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "dev": "node --watch --experimental-strip-types --experimental-sqlite --env-file=../.env src/server.ts",
+    "eslint": "eslint src",
+    "eslint-fix": "eslint src --fix",
+    "prettier": "prettier --check src",
+    "prettier-write": "prettier --write src",
+    "start": "node --experimental-strip-types --experimental-sqlite --env-file=../.env src/server.ts",
+    "test": "npm run test-only && npm run check-types",
+    "test-only": "vitest run --coverage",
+    "test-watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/static": "^9.1.3",
+    "@fastify/type-provider-typebox": "^6.1.0",
+    "@sinclair/typebox": "^0.34.49",
+    "fastify": "^5.8.5",
+    "modbus-serial": "^8.0.25"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "@zakodium/tsconfig": "^1.0.5",
+    "vitest": "^3.0.0"
+  },
+  "volta": {
+    "extends": "../package.json"
+  }
+}

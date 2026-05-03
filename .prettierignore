@@ -1,0 +1,6 @@
+node_modules/
+dist/
+CHANGELOG.md
+backend/coverage/
+frontend/playwright-report/
+frontend/test-results/
