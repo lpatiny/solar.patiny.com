@@ -190,14 +190,6 @@ export default function ConfigCard({
     setSyncError(null);
     setSyncProgress(null);
 
-    // Poll progress every second while the long-running POST is in flight
-    pollRef.current = setInterval(() => {
-      void fetch('/api/solarweb/scrape-progress')
-        .then((r) => r.json())
-        .then((p) => setSyncProgress(p as SyncProgress))
-        .catch(() => null);
-    }, 1000);
-
     try {
       const res = await fetch('/api/solarweb/scrape-history', {
         method: 'POST',
@@ -212,7 +204,29 @@ export default function ConfigCard({
         }
         throw new Error(detail);
       }
-      setSyncResult((await res.json()) as SyncResult);
+
+      // Scrape runs in the background — poll until running goes false.
+      await new Promise<void>((resolve) => {
+        pollRef.current = setInterval(() => {
+          void fetch('/api/solarweb/scrape-progress')
+            .then((r) => r.json())
+            .then((p) => {
+              const progress = p as SyncProgress;
+              setSyncProgress(progress);
+              if (!progress.running) {
+                clearInterval(pollRef.current!);
+                pollRef.current = null;
+                setSyncResult({
+                  synced: progress.synced,
+                  errors: progress.errors,
+                  startDate: progress.startDate,
+                });
+                resolve();
+              }
+            })
+            .catch(() => null);
+        }, 2000);
+      });
     } catch (error_) {
       setSyncError(error_ instanceof Error ? error_.message : 'Sync failed');
     } finally {

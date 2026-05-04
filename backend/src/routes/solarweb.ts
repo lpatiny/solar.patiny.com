@@ -33,23 +33,21 @@ export default async function solarwebRoutes(fastify: FastifyTyped) {
     {
       schema: {
         response: {
-          200: Type.Object({
-            synced: Type.Number(),
-            errors: Type.Number(),
-            startDate: Type.String(),
-          }),
-          500: Type.Object({ error: Type.String() }),
+          200: Type.Object({ started: Type.Boolean() }),
+          409: Type.Object({ error: Type.String() }),
         },
       },
     },
     async (_, reply) => {
-      try {
-        return await scrapeAllHistory();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        fastify.log.error({ err: error }, 'scrapeAllHistory failed');
-        return reply.code(500).send({ error: message });
+      if (getSyncProgress().running) {
+        return reply.code(409).send({ error: 'Sync already in progress' });
       }
+      // Fire-and-forget: return immediately so the HTTP connection closes
+      // before Cloudflare's ~100 s timeout. Client polls /scrape-progress.
+      void scrapeAllHistory().catch((error: unknown) => {
+        fastify.log.error({ err: error }, 'scrapeAllHistory failed');
+      });
+      return { started: true };
     },
   );
 
