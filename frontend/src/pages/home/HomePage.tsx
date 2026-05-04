@@ -68,6 +68,7 @@ export interface ConfigData {
   modbus_host: string;
   modbus_port: number;
   solarweb_configured: boolean;
+  solarweb_scrape_delay_ms: number;
   poll_interval_ms: number;
   panel_surface_m2: number;
   panel_efficiency_pct: number;

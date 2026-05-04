@@ -11,6 +11,7 @@ const ConfigResponse = Type.Object({
   modbus_host: Type.String(),
   modbus_port: Type.Number(),
   solarweb_configured: Type.Boolean(),
+  solarweb_scrape_delay_ms: Type.Number(),
   poll_interval_ms: Type.Number(),
   panel_surface_m2: Type.Number(),
   panel_efficiency_pct: Type.Number(),
@@ -19,6 +20,7 @@ const ConfigResponse = Type.Object({
 });
 
 const PanelSettingsBody = Type.Object({
+  solarweb_scrape_delay_ms: Type.Optional(Type.Number({ minimum: 1000 })),
   panel_surface_m2: Type.Optional(Type.Number({ minimum: 1 })),
   panel_efficiency_pct: Type.Optional(
     Type.Number({ minimum: 1, maximum: 100 }),
@@ -47,6 +49,9 @@ export default async function configRoutes(fastify: FastifyTyped) {
         process.env.MODBUS_HOST ?? froniusHost.replace(/^https?:\/\//, '');
       const modbusPort = Number(process.env.MODBUS_PORT ?? 502);
       const solarwebConfigured = isSolarWebConfigured();
+      const solarwebScrapeDelayMs = Number(
+        db.getSetting('solarweb_scrape_delay_ms') ?? 60_000,
+      );
       const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS ?? 10_000);
       const panelSurfaceM2 = Number(db.getSetting('panel_surface_m2') ?? 46);
       const panelEfficiencyPct = Number(
@@ -65,6 +70,7 @@ export default async function configRoutes(fastify: FastifyTyped) {
         modbus_host: modbusHost,
         modbus_port: modbusPort,
         solarweb_configured: solarwebConfigured,
+        solarweb_scrape_delay_ms: solarwebScrapeDelayMs,
         poll_interval_ms: pollIntervalMs,
         panel_surface_m2: panelSurfaceM2,
         panel_efficiency_pct: panelEfficiencyPct,
@@ -84,11 +90,18 @@ export default async function configRoutes(fastify: FastifyTyped) {
     },
     async (request) => {
       const {
+        solarweb_scrape_delay_ms,
         panel_surface_m2,
         panel_efficiency_pct,
         panel_performance_ratio,
         panel_temp_coeff_pct_per_c,
       } = request.body;
+      if (solarweb_scrape_delay_ms !== undefined) {
+        db.upsertSetting(
+          'solarweb_scrape_delay_ms',
+          String(solarweb_scrape_delay_ms),
+        );
+      }
       if (panel_surface_m2 !== undefined) {
         db.upsertSetting('panel_surface_m2', String(panel_surface_m2));
       }
@@ -122,6 +135,9 @@ export default async function configRoutes(fastify: FastifyTyped) {
         modbus_host: modbusHost,
         modbus_port: modbusPort,
         solarweb_configured: solarwebConfigured,
+        solarweb_scrape_delay_ms: Number(
+          db.getSetting('solarweb_scrape_delay_ms') ?? 60_000,
+        ),
         poll_interval_ms: pollIntervalMs,
         panel_surface_m2: Number(db.getSetting('panel_surface_m2') ?? 46),
         panel_efficiency_pct: Number(

@@ -578,8 +578,9 @@ export async function scrapeAllHistory(): Promise<{
         break;
       }
     }
+    const delayMs = Number(db.getSetting('solarweb_scrape_delay_ms') ?? 60_000);
     await new Promise<void>((resolve) => {
-      setTimeout(resolve, 500);
+      setTimeout(resolve, delayMs);
     });
   }
   /* eslint-enable no-await-in-loop */

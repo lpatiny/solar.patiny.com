@@ -104,6 +104,9 @@ export default function ConfigCard({
     config.panel_performance_ratio,
   );
   const [tempCoeff, setTempCoeff] = useState(config.panel_temp_coeff_pct_per_c);
+  const [scrapeDelaySec, setScrapeDelaySec] = useState(
+    Math.round(config.solarweb_scrape_delay_ms / 1000),
+  );
   const [savingPanel, setSavingPanel] = useState(false);
   const [panelSaveError, setPanelSaveError] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
@@ -162,6 +165,7 @@ export default function ConfigCard({
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          solarweb_scrape_delay_ms: scrapeDelaySec * 1000,
           panel_surface_m2: panelSurface,
           panel_efficiency_pct: panelEfficiency,
           panel_performance_ratio: performanceRatio,
@@ -411,6 +415,28 @@ export default function ConfigCard({
           config.solarweb_configured ? 'SolarWeb + local' : 'Local readings'
         }
       />
+
+      <Row label="Scrape delay">
+        <NumericInput
+          value={scrapeDelaySec}
+          onValueChange={(v) => setScrapeDelaySec(v)}
+          min={1}
+          stepSize={10}
+          style={{ width: 70 }}
+          rightElement={
+            <span
+              style={{
+                fontSize: 11,
+                color: 'var(--text-secondary)',
+                padding: '0 6px',
+                lineHeight: '30px',
+              }}
+            >
+              s
+            </span>
+          }
+        />
+      </Row>
 
       <div
         style={{
