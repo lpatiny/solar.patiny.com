@@ -15,6 +15,7 @@ import type { SolarwebReadingRow } from '../db/rows.ts';
 
 export interface SyncProgress {
   running: boolean;
+  cancelled: boolean;
   currentDate: string | null;
   synced: number;
   errors: number;
@@ -24,6 +25,7 @@ export interface SyncProgress {
 
 let progress: SyncProgress = {
   running: false,
+  cancelled: false,
   currentDate: null,
   synced: 0,
   errors: 0,
@@ -31,15 +33,32 @@ let progress: SyncProgress = {
   startDate: '',
 };
 
+let cancelRequested = false;
+
 /** Returns a snapshot of the current history-sync progress. */
 export function getSyncProgress(): SyncProgress {
   return { ...progress };
 }
 
-const PV_SYSTEM_ID = process.env.SOLARWEB_PV_SYSTEM_ID;
-const USERNAME = process.env.SOLARWEB_USERNAME;
-const PASSWORD = process.env.SOLARWEB_PASSWORD;
-const HISTORY_START = process.env.SOLARWEB_HISTORY_START;
+/** Requests cancellation of an in-progress history sync. */
+export function cancelSync(): void {
+  cancelRequested = true;
+}
+
+async function cancellableDelay(ms: number): Promise<void> {
+  const step = 500;
+  let waited = 0;
+  /* eslint-disable no-await-in-loop -- polling loop; each tick must complete before the next check */
+  while (waited < ms) {
+    if (cancelRequested) return;
+    const slice = Math.min(step, ms - waited);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, slice);
+    });
+    waited += step;
+  }
+  /* eslint-enable no-await-in-loop */
+}
 
 const DEBUG = process.env.SOLARWEB_DEBUG === 'true';
 
@@ -248,8 +267,8 @@ async function login(): Promise<CookieJar> {
 
   // Step 3: POST credentials to Fronius commonauth
   const body = new URLSearchParams({
-    username: USERNAME ?? '',
-    password: PASSWORD ?? '',
+    username: process.env.SOLARWEB_USERNAME ?? '',
+    password: process.env.SOLARWEB_PASSWORD ?? '',
     sessionDataKey,
     chkRemember: 'on',
   });
@@ -401,14 +420,15 @@ async function fetchProductionChart(
   month: number,
   day: number,
 ): Promise<SolarWebChartResponse> {
-  const url = `https://www.solarweb.com/Chart/GetChartNew?pvSystemId=${PV_SYSTEM_ID}&year=${year}&month=${month}&day=${day}&interval=day&view=production&_=${Date.now()}`;
+  const pvSystemId = process.env.SOLARWEB_PV_SYSTEM_ID;
+  const url = `https://www.solarweb.com/Chart/GetChartNew?pvSystemId=${pvSystemId}&year=${year}&month=${month}&day=${day}&interval=day&view=production&_=${Date.now()}`;
   const res = await fetch(url, {
     headers: {
       Accept: '*/*',
       'Cache-Control': 'no-cache',
       Cookie: cookieHeader(jar),
       Pragma: 'no-cache',
-      Referer: `https://www.solarweb.com/Chart/Chart?pvSystemId=${PV_SYSTEM_ID}`,
+      Referer: `https://www.solarweb.com/Chart/Chart?pvSystemId=${pvSystemId}`,
       'User-Agent': USER_AGENT,
       'X-Requested-With': 'XMLHttpRequest',
     },
@@ -491,7 +511,13 @@ async function syncDay(date: string): Promise<void> {
 
 /** Scrapes yesterday and today from SolarWeb to keep recent stats current. */
 export async function scrapeRecentDays(): Promise<void> {
-  if (!PV_SYSTEM_ID || !USERNAME || !PASSWORD) return;
+  if (
+    !process.env.SOLARWEB_PV_SYSTEM_ID ||
+    !process.env.SOLARWEB_USERNAME ||
+    !process.env.SOLARWEB_PASSWORD
+  ) {
+    return;
+  }
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const yesterday = new Date(now.getTime() - 86_400_000)
@@ -518,15 +544,22 @@ export async function scrapeAllHistory(): Promise<{
   errors: number;
   startDate: string;
 }> {
+  const pvSystemId = process.env.SOLARWEB_PV_SYSTEM_ID;
+  const username = process.env.SOLARWEB_USERNAME;
+  const password = process.env.SOLARWEB_PASSWORD;
+  const historyStart = process.env.SOLARWEB_HISTORY_START;
+
   process.stderr.write(
-    `[solarweb] scrapeAllHistory: PV_SYSTEM_ID=${PV_SYSTEM_ID ? 'set' : 'MISSING'} USERNAME=${USERNAME ? 'set' : 'MISSING'} PASSWORD=${PASSWORD ? 'set' : 'MISSING'} HISTORY_START=${HISTORY_START ?? '(none)'}\n`,
+    `[solarweb] scrapeAllHistory: PV_SYSTEM_ID=${pvSystemId ? 'set' : 'MISSING'} USERNAME=${username ? 'set' : 'MISSING'} PASSWORD=${password ? 'set' : 'MISSING'} HISTORY_START=${historyStart ?? '(none)'}\n`,
   );
-  if (!PV_SYSTEM_ID || !USERNAME || !PASSWORD) {
+  if (!pvSystemId || !username || !password) {
     return { synced: 0, errors: 0, startDate: '' };
   }
 
+  cancelRequested = false;
+
   const startDate =
-    HISTORY_START ??
+    historyStart ??
     new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86_400_000)
@@ -560,6 +593,7 @@ export async function scrapeAllHistory(): Promise<{
 
   progress = {
     running: true,
+    cancelled: false,
     currentDate: null,
     synced: 0,
     errors: 0,
@@ -569,6 +603,10 @@ export async function scrapeAllHistory(): Promise<{
 
   /* eslint-disable no-await-in-loop -- sequential to avoid rate-limiting */
   for (const date of dates) {
+    if (cancelRequested) {
+      progress.cancelled = true;
+      break;
+    }
     progress.currentDate = date;
     try {
       await syncDay(date);
@@ -591,15 +629,14 @@ export async function scrapeAllHistory(): Promise<{
       }
     }
     const delayMs = Number(db.getSetting('solarweb_scrape_delay_ms') ?? 60_000);
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, delayMs);
-    });
+    await cancellableDelay(delayMs);
   }
   /* eslint-enable no-await-in-loop */
 
-  const { synced, errors } = progress;
+  const { synced, errors, cancelled } = progress;
   progress = {
     running: false,
+    cancelled,
     currentDate: null,
     synced,
     errors,

@@ -24,6 +24,21 @@ if (existsSync(frontendDist)) {
   });
 }
 
+fastify.log.info(
+  {
+    FRONIUS_HOST: process.env.FRONIUS_HOST ?? '(default: http://192.168.1.30)',
+    MODBUS_ENABLED: process.env.MODBUS_ENABLED ?? '(default: false)',
+    SOLARWEB_PV_SYSTEM_ID: process.env.SOLARWEB_PV_SYSTEM_ID
+      ? 'set'
+      : 'NOT SET',
+    SOLARWEB_USERNAME: process.env.SOLARWEB_USERNAME ? 'set' : 'NOT SET',
+    SOLARWEB_PASSWORD: process.env.SOLARWEB_PASSWORD ? 'set' : 'NOT SET',
+    SOLARWEB_HISTORY_START:
+      process.env.SOLARWEB_HISTORY_START ?? '(not set, defaults to 1 year ago)',
+  },
+  'Environment configuration',
+);
+
 startPoller(fastify.log);
 
 fastify.addHook('onClose', () => {

@@ -2,6 +2,7 @@ import { Type } from 'typebox';
 
 import { syncAllHistory } from '../services/solarweb.ts';
 import {
+  cancelSync,
   getSessionStatus,
   getSyncProgress,
   importSession,
@@ -92,6 +93,19 @@ export default async function solarwebRoutes(fastify: FastifyTyped) {
     },
   );
 
+  fastify.post(
+    '/api/solarweb/scrape-cancel',
+    {
+      schema: {
+        response: { 200: Type.Object({ cancelled: Type.Boolean() }) },
+      },
+    },
+    () => {
+      cancelSync();
+      return { cancelled: true };
+    },
+  );
+
   fastify.get(
     '/api/solarweb/scrape-progress',
     {
@@ -99,6 +113,7 @@ export default async function solarwebRoutes(fastify: FastifyTyped) {
         response: {
           200: Type.Object({
             running: Type.Boolean(),
+            cancelled: Type.Boolean(),
             currentDate: Type.Union([Type.String(), Type.Null()]),
             synced: Type.Number(),
             errors: Type.Number(),

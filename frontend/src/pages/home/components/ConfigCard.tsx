@@ -14,6 +14,7 @@ interface SyncResult {
   synced: number;
   errors: number;
   startDate: string;
+  cancelled: boolean;
 }
 
 interface SessionStatus {
@@ -25,6 +26,7 @@ interface SessionStatus {
 
 interface SyncProgress {
   running: boolean;
+  cancelled: boolean;
   currentDate: string | null;
   synced: number;
   errors: number;
@@ -225,6 +227,7 @@ export default function ConfigCard({
                   synced: progress.synced,
                   errors: progress.errors,
                   startDate: progress.startDate,
+                  cancelled: progress.cancelled,
                 });
                 resolve();
               }
@@ -474,6 +477,17 @@ export default function ConfigCard({
         >
           Sync History
         </Button>
+        {syncing && (
+          <Button
+            intent={Intent.DANGER}
+            size="small"
+            onClick={() => {
+              void fetch('/api/solarweb/scrape-cancel', { method: 'POST' });
+            }}
+          >
+            Cancel
+          </Button>
+        )}
         {syncing && syncProgress && (
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
             {syncProgress.currentDate ?? '…'}
@@ -489,6 +503,7 @@ export default function ConfigCard({
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
             {syncResult.synced} days synced
             {syncResult.errors > 0 && `, ${syncResult.errors} errors`}
+            {syncResult.cancelled && ' (cancelled)'}
             {syncResult.startDate ? ` from ${syncResult.startDate}` : ''}
           </span>
         )}
@@ -670,11 +685,7 @@ export default function ConfigCard({
         <Row label="Loading…" />
       ) : (
         Object.entries(dbStats).map(([table, count]) => (
-          <Row
-            key={table}
-            label={table}
-            value={count.toLocaleString()}
-          />
+          <Row key={table} label={table} value={count.toLocaleString()} />
         ))
       )}
     </div>
