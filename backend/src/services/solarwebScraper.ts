@@ -552,36 +552,25 @@ export async function scrapeAllHistory(): Promise<{
     startDate: `${startDate} (${allDates.length - dates.length} already complete)`,
   };
 
-  const MAX_CONSECUTIVE_LOGIN_FAILURES = 3;
-  let consecutiveLoginFailures = 0;
-
   /* eslint-disable no-await-in-loop -- sequential to avoid rate-limiting */
   for (const date of dates) {
     progress.currentDate = date;
     try {
       await syncDay(date);
       progress.synced++;
-      consecutiveLoginFailures = 0;
     } catch (error_) {
       progress.errors++;
       dbg(
         `Error on ${date}: ${error_ instanceof Error ? error_.message : String(error_)}`,
       );
       if (!sessionJar) {
-        // eslint-disable-next-line require-atomic-updates
-        sessionJar = await login().catch(() => null);
-        if (!sessionJar) {
-          consecutiveLoginFailures++;
-          if (consecutiveLoginFailures >= MAX_CONSECUTIVE_LOGIN_FAILURES) {
-            dbg(
-              `Aborting history sync after ${consecutiveLoginFailures} consecutive login failures (CAPTCHA or credentials issue)`,
-            );
-            process.stderr.write(
-              `[solarweb] History sync aborted: login failed ${consecutiveLoginFailures} times in a row. CAPTCHA or credential issue — will retry on next scheduled sync.\n`,
-            );
-            break;
-          }
-        }
+        // getSessionJar() already attempted login and failed (CAPTCHA / bad credentials).
+        // Do not retry — each failed attempt risks triggering another CAPTCHA challenge.
+        dbg('Aborting history sync: login failed (CAPTCHA or credentials issue)');
+        process.stderr.write(
+          '[solarweb] History sync aborted: login failed. CAPTCHA or credential issue — will retry on next scheduled sync.\n',
+        );
+        break;
       }
     }
     await new Promise<void>((resolve) => {
