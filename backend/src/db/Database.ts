@@ -298,7 +298,7 @@ export class Database {
 
   public getSolarwebDayCounts(from: number, to: number): Map<string, number> {
     const rows = this.statement<{ day: string; cnt: number }>(
-      `SELECT date(timestamp, 'unixepoch') AS day, COUNT(*) AS cnt
+      `SELECT date(timestamp, 'unixepoch', 'localtime') AS day, COUNT(*) AS cnt
        FROM solarweb_readings WHERE timestamp BETWEEN ? AND ?
        GROUP BY day`,
     ).all(from, to);

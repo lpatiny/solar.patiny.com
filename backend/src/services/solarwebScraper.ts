@@ -575,8 +575,10 @@ export async function scrapeAllHistory(): Promise<{
   }
 
   // Load existing slot counts and skip days that are already complete.
-  // 288 = 24h × 12 five-minute slots; DST days can be ±12, so 270 is the safe floor.
-  const COMPLETE_SLOTS = 270;
+  // 288 = 24h × 12 five-minute slots. The DB query uses 'localtime' so counts
+  // match local calendar dates when TZ is set correctly. Threshold 240 (=20 h)
+  // is a safe fallback if TZ is UTC but the PV system is in a positive offset zone.
+  const COMPLETE_SLOTS = 240;
   const fromTs = Math.floor(
     new Date(`${startDate}T00:00:00Z`).getTime() / 1000,
   );

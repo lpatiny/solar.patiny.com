@@ -26,6 +26,7 @@ if (existsSync(frontendDist)) {
 
 fastify.log.info(
   {
+    TZ: process.env.TZ ?? '(not set — SQLite localtime will use UTC)',
     FRONIUS_HOST: process.env.FRONIUS_HOST ?? '(default: http://192.168.1.30)',
     MODBUS_ENABLED: process.env.MODBUS_ENABLED ?? '(default: false)',
     SOLARWEB_PV_SYSTEM_ID: process.env.SOLARWEB_PV_SYSTEM_ID
