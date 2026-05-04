@@ -287,10 +287,13 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/history?resolution=${resolution}&from=${from}&to=${to}`)
-      .then((r) => r.json())
-      .then((rows) => {
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((rows: unknown) => {
         if (!cancelled) {
-          setData(rows as HistoryPoint[]);
+          setData(Array.isArray(rows) ? (rows as HistoryPoint[]) : []);
           setLoadedKey(fetchKey);
           setZoomIndices(null);
         }
