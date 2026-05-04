@@ -173,15 +173,21 @@ export async function buildRegisterMap(): Promise<RegisterMap> {
       if (n > 0) {
         const moduleSize = Math.floor((m160.length - 8) / n);
         const mod0Start = dataStart + 8;
-        pv1DcwR = mod0Start + 7;
-        if (n >= 2) pv2DcwR = mod0Start + moduleSize + 7;
+        // DCW is moduleSize-9 from module start: the last 9 registers are
+        // DCWH(2)+Tms(2)+Tmp(1)+DCSt(1)+DCEvt(2)+DCW(1). The standard
+        // SunSpec Model 160 uses IDStr=string[16] (8 regs), giving moduleSize=20
+        // and dcwOffset=11. This formula handles any compliant module size.
+        const dcwOffset = moduleSize - 9;
+        pv1DcwR = mod0Start + dcwOffset;
+        if (n >= 2) pv2DcwR = mod0Start + moduleSize + dcwOffset;
       } else {
-        pv1DcwR = dataStart + 8 + 7;
-        pv2DcwR = dataStart + 8 + 20 + 7;
+        // Standard SunSpec Model 160: moduleSize=20, dcwOffset=11
+        pv1DcwR = dataStart + 8 + 11;
+        pv2DcwR = dataStart + 8 + 20 + 11;
       }
     }).catch(() => {
-      pv1DcwR = dataStart + 8 + 7;
-      pv2DcwR = dataStart + 8 + 20 + 7;
+      pv1DcwR = dataStart + 8 + 11;
+      pv2DcwR = dataStart + 8 + 20 + 11;
     });
   }
 
