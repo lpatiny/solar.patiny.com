@@ -505,7 +505,8 @@ export default function ConfigCard({
           }}
         >
           <div style={{ marginBottom: 10, color: 'var(--text-secondary)' }}>
-            Log in manually to SolarWeb and paste your session cookies here.
+            The session cookie is HttpOnly and cannot be read via the console.
+            Use the DevTools Network tab instead.
           </div>
 
           <div style={{ fontWeight: 600, marginBottom: 4 }}>
@@ -524,33 +525,27 @@ export default function ConfigCard({
           </div>
 
           <div style={{ fontWeight: 600, marginBottom: 4 }}>
-            Step 2 — Copy your cookies
+            Step 2 — Copy the Cookie request header
           </div>
-          <div style={{ marginBottom: 6 }}>
-            On the SolarWeb tab, open the browser console (F12 → Console) and
-            run:
+          <div style={{ marginBottom: 4 }}>
+            Press <b>F12</b> on the SolarWeb tab → <b>Network</b> → reload the
+            page → click any request to <code>www.solarweb.com</code> →{' '}
+            <b>Headers</b> → scroll to <b>Request Headers</b> → find{' '}
+            <code>Cookie:</code> and copy its full value.
           </div>
           <div
             style={{
               background: '#0f172a',
               borderRadius: 4,
+              color: 'var(--text-secondary)',
               fontFamily: 'monospace',
               fontSize: 11,
-              marginBottom: 6,
+              marginBottom: 10,
               padding: '6px 10px',
             }}
           >
-            copy(document.cookie)
+            F12 → Network → any solarweb.com request → Headers → Cookie: …
           </div>
-          <Button
-            size="small"
-            style={{ marginBottom: 10 }}
-            onClick={() => {
-              void navigator.clipboard.writeText('copy(document.cookie)');
-            }}
-          >
-            Copy script ⧉
-          </Button>
 
           <div style={{ fontWeight: 600, marginBottom: 4 }}>
             Step 3 — Paste and import
@@ -558,9 +553,9 @@ export default function ConfigCard({
           <TextArea
             value={cookiePaste}
             onChange={(e) => setCookiePaste(e.target.value)}
-            placeholder="Paste cookie string here…"
+            placeholder="Paste full Cookie header value here…"
             fill
-            rows={3}
+            rows={4}
             style={{ fontFamily: 'monospace', fontSize: 11, marginBottom: 8 }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
