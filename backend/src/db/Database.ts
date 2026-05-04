@@ -169,10 +169,7 @@ export class Database {
   static async open(dbPath: string): Promise<Database> {
     mkdirSync(dirname(dbPath), { recursive: true });
     const sqlite = new DatabaseSync(dbPath);
-    // WAL mode requires shared-memory (-shm) file support which fails on some
-    // Docker overlay/volume filesystems (SQLITE_IOERR_SHMOPEN). Use standard
-    // rollback journal instead — safe and sufficient for a single-process app.
-    sqlite.exec('PRAGMA journal_mode = DELETE');
+    sqlite.exec('PRAGMA journal_mode = WAL');
     sqlite.exec('PRAGMA synchronous = NORMAL');
 
     const postgrator = new Postgrator({
