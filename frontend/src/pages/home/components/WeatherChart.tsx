@@ -23,10 +23,10 @@ function deriveResolution(from: number, to: number): WeatherResolution {
 function formatTs(ts: number, resolution: WeatherResolution): string {
   const d = new Date(ts * 1000);
   if (resolution === 'daily') {
-    const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     return `${date}|${d.getFullYear()}`;
   }
-  const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return `${date}|${time}`;
 }

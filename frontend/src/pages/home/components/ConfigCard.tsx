@@ -119,11 +119,16 @@ export default function ConfigCard({
     years: number[];
   } | null>(null);
   const [weatherSyncError, setWeatherSyncError] = useState<string | null>(null);
+  const [dbStats, setDbStats] = useState<Record<string, number> | null>(null);
 
   useEffect(() => {
     void fetch('/api/solarweb/session')
       .then((r) => r.json())
       .then((s) => setSessionStatus(s as SessionStatus))
+      .catch(() => null);
+    void fetch('/api/db/stats')
+      .then((r) => r.json())
+      .then((s) => setDbStats(s as Record<string, number>))
       .catch(() => null);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -659,6 +664,19 @@ export default function ConfigCard({
           </span>
         )}
       </div>
+
+      <SectionTitle title="Database" />
+      {dbStats === null ? (
+        <Row label="Loading…" />
+      ) : (
+        Object.entries(dbStats).map(([table, count]) => (
+          <Row
+            key={table}
+            label={table}
+            value={count.toLocaleString()}
+          />
+        ))
+      )}
     </div>
   );
 }

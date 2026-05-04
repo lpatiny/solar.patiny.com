@@ -391,6 +391,23 @@ export class Database {
     );
   }
 
+  public getTableStats(): Record<string, number> {
+    const tables = [
+      'readings',
+      'solarweb_readings',
+      'weather_readings',
+      'settings',
+    ];
+    const result: Record<string, number> = {};
+    for (const table of tables) {
+      const row = this.statement<{ cnt: number }>(
+        `SELECT COUNT(*) AS cnt FROM ${table}`,
+      ).get();
+      result[table] = row?.cnt ?? 0;
+    }
+    return result;
+  }
+
   public getSetting(key: string): string | null {
     const row = this.statement<{ value: string }>(
       'SELECT value FROM settings WHERE key = ?',

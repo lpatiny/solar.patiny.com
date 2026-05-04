@@ -33,6 +33,8 @@ const PanelSettingsBody = Type.Object({
   ),
 });
 
+const DbStatsResponse = Type.Record(Type.String(), Type.Number());
+
 /**
  * Returns the current service configuration (no secrets, just on/off status).
  * PATCH /api/config allows updating panel geometry stored in the database.
@@ -151,5 +153,11 @@ export default async function configRoutes(fastify: FastifyTyped) {
         ),
       };
     },
+  );
+
+  fastify.get(
+    '/api/db/stats',
+    { schema: { response: { 200: DbStatsResponse } } },
+    () => db.getTableStats(),
   );
 }
