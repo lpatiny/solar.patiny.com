@@ -430,6 +430,18 @@ async function fetchProductionChart(
       `Chart fetch failed: ${res.status} for ${year}-${month}-${day}`,
     );
   }
+
+  // SolarWeb may rotate session cookies on each response. Merge any new
+  // Set-Cookie headers back into the jar and persist so subsequent requests
+  // use the refreshed tokens instead of going stale.
+  const refreshed = parseCookies(res.headers);
+  if (refreshed.size > 0) {
+    const updated = mergeCookies(jar, refreshed);
+    sessionJar = updated;
+    saveSession(updated);
+    dbg(`Refreshed ${refreshed.size} cookie(s) from response`);
+  }
+
   return res.json() as Promise<SolarWebChartResponse>;
 }
 
