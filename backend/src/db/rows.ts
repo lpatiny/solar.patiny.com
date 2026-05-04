@@ -65,6 +65,17 @@ export interface WeatherReadingRow {
   sunshine_min: number | null;
 }
 
+/** Aggregated weather row (hourly or daily average), without the auto-increment id. */
+export interface AggregatedWeatherRow {
+  timestamp: number;
+  station: string;
+  global_radiation_w: number | null;
+  temperature_c: number | null;
+  humidity_pct: number | null;
+  precipitation_mm: number | null;
+  sunshine_min: number | null;
+}
+
 /** Result of a kWh aggregation over solarweb_readings for the stats route. */
 export interface AggregatedStatsRow {
   period: string;

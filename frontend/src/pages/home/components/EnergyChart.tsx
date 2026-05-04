@@ -1,6 +1,6 @@
 /* eslint-disable camelcase, @typescript-eslint/naming-convention -- API response fields use snake_case */
 import { ResponsiveBar } from '@nivo/bar';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 type Resolution = 'day' | 'month' | 'year';
 
@@ -118,7 +118,20 @@ export default function EnergyChart({
   }
 
   const resolution = manualResolution ?? autoResolution;
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [data, setData] = useState<StatPoint[]>([]);
+
+  const toggleKey = useCallback((key: string) => {
+    setHiddenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   const fetchKey = `${resolution}-${from}-${to}`;
@@ -207,11 +220,11 @@ export default function EnergyChart({
         <div style={{ height: 320 }}>
           <ResponsiveBar
             data={data}
-            keys={KEYS}
+            keys={KEYS.filter((k) => !hiddenKeys.has(k))}
             indexBy="period"
             theme={nivoTheme}
             colors={({ id }) => COLORS[id as string] ?? '#94a3b8'}
-            margin={{ top: 10, right: 20, bottom: 70, left: 60 }}
+            margin={{ top: 10, right: 20, bottom: 50, left: 60 }}
             padding={0.25}
             groupMode="grouped"
             axisBottom={{
@@ -233,17 +246,28 @@ export default function EnergyChart({
             legends={[
               {
                 dataFrom: 'keys',
-                anchor: 'bottom',
-                direction: 'row',
-                translateY: 65,
+                anchor: 'top-right',
+                direction: 'column',
+                translateX: -5,
+                translateY: 5,
                 itemWidth: 100,
-                itemHeight: 14,
+                itemHeight: 18,
                 symbolSize: 10,
                 symbolShape: 'circle',
+                onClick: (datum) => toggleKey(datum.id as string),
+                itemTextColor: '#94a3b8',
+                effects: [
+                  {
+                    on: 'hover',
+                    style: { itemTextColor: '#f1f5f9', itemOpacity: 0.85 },
+                  },
+                ],
                 data: KEYS.map((key) => ({
                   id: key,
                   label: LABELS[key] ?? key,
-                  color: COLORS[key] ?? '#94a3b8',
+                  color: hiddenKeys.has(key)
+                    ? '#334155'
+                    : (COLORS[key] ?? '#94a3b8'),
                 })),
               },
             ]}

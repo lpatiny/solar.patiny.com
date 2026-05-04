@@ -3,11 +3,7 @@ import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
 
 import { db } from '../db/Database.ts';
-import {
-  STATION_CODES,
-  fetchHistoricalStationReadings,
-  fetchStationReadings,
-} from '../services/meteoStationService.ts';
+import { syncWeatherHistory } from '../services/weatherSyncService.ts';
 
 const WeatherReadingSchema = Type.Object({
   timestamp: Type.Number(),
@@ -19,41 +15,11 @@ const WeatherReadingSchema = Type.Object({
   sunshine_min: Type.Union([Type.Number(), Type.Null()]),
 });
 
-async function syncWeatherHistory(): Promise<{
-  inserted: number;
-  years: number[];
-}> {
-  const oldestTs = db.getOldestSolarwebTimestamp();
-  if (oldestTs === null) return { inserted: 0, years: [] };
-
-  const oldestYear = new Date(oldestTs * 1000).getUTCFullYear();
-  const currentYear = new Date().getUTCFullYear();
-  const years: number[] = [];
-  let inserted = 0;
-
-  /* eslint-disable no-await-in-loop -- sequential by design: fetch one year at a time to avoid hammering MeteoSwiss */
-  for (let year = oldestYear; year <= currentYear; year++) {
-    for (const code of STATION_CODES) {
-      const readings = await fetchHistoricalStationReadings(code, year);
-      if (readings.length > 0) {
-        db.upsertWeatherReadings(readings);
-        inserted += readings.length;
-        years.push(year);
-        break;
-      }
-    }
-  }
-  /* eslint-enable no-await-in-loop */
-
-  // Also fetch the most recent data (last ~2 days) from the live endpoint
-  const recent = await fetchStationReadings();
-  if (recent.length > 0) {
-    db.upsertWeatherReadings(recent);
-    inserted += recent.length;
-  }
-
-  return { inserted, years };
-}
+const WeatherResolutionSchema = Type.Union([
+  Type.Literal('raw'),
+  Type.Literal('hourly'),
+  Type.Literal('daily'),
+]);
 
 const weatherRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.get(
@@ -63,6 +29,7 @@ const weatherRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
         querystring: Type.Object({
           from: Type.Number(),
           to: Type.Number(),
+          resolution: Type.Optional(WeatherResolutionSchema),
         }),
         response: {
           200: Type.Array(WeatherReadingSchema),
@@ -70,7 +37,9 @@ const weatherRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
       },
     },
     async (request) => {
-      const { from, to } = request.query;
+      const { from, to, resolution = 'raw' } = request.query;
+      if (resolution === 'hourly') return db.queryWeatherHourly(from, to);
+      if (resolution === 'daily') return db.queryWeatherDaily(from, to);
       return db.queryWeatherReadings(from, to);
     },
   );

@@ -11,6 +11,7 @@ import { TypedStatementSync } from './TypedStatementSync.ts';
 import type {
   AggregatedReadingRow,
   AggregatedSolarwebRow,
+  AggregatedWeatherRow,
   ReadingRow,
   SolarwebReadingRow,
   WeatherReadingRow,
@@ -295,6 +296,15 @@ export class Database {
     return this.#querySolarwebMonthly.all(from, to);
   }
 
+  public getSolarwebDayCounts(from: number, to: number): Map<string, number> {
+    const rows = this.statement<{ day: string; cnt: number }>(
+      `SELECT date(timestamp, 'unixepoch') AS day, COUNT(*) AS cnt
+       FROM solarweb_readings WHERE timestamp BETWEEN ? AND ?
+       GROUP BY day`,
+    ).all(from, to);
+    return new Map(rows.map((r) => [r.day, r.cnt]));
+  }
+
   public getOldestTimestamp(): number | null {
     const sw =
       this.statement<{ ts: number | null }>(
@@ -337,6 +347,48 @@ export class Database {
 
   public queryWeatherReadings(from: number, to: number): WeatherReadingRow[] {
     return this.#queryWeatherReadings.all(from, to);
+  }
+
+  public queryWeatherHourly(from: number, to: number): AggregatedWeatherRow[] {
+    return this.statement<AggregatedWeatherRow>(
+      `SELECT
+         (timestamp / 3600) * 3600 AS timestamp,
+         station,
+         AVG(global_radiation_w) AS global_radiation_w,
+         AVG(temperature_c) AS temperature_c,
+         AVG(humidity_pct) AS humidity_pct,
+         SUM(precipitation_mm) AS precipitation_mm,
+         SUM(sunshine_min) AS sunshine_min
+       FROM weather_readings
+       WHERE timestamp BETWEEN ? AND ?
+       GROUP BY (timestamp / 3600), station
+       ORDER BY timestamp`,
+    ).all(from, to);
+  }
+
+  public queryWeatherDaily(from: number, to: number): AggregatedWeatherRow[] {
+    return this.statement<AggregatedWeatherRow>(
+      `SELECT
+         (timestamp / 86400) * 86400 + 43200 AS timestamp,
+         station,
+         AVG(global_radiation_w) AS global_radiation_w,
+         AVG(temperature_c) AS temperature_c,
+         AVG(humidity_pct) AS humidity_pct,
+         SUM(precipitation_mm) AS precipitation_mm,
+         SUM(sunshine_min) AS sunshine_min
+       FROM weather_readings
+       WHERE timestamp BETWEEN ? AND ?
+       GROUP BY (timestamp / 86400), station
+       ORDER BY timestamp`,
+    ).all(from, to);
+  }
+
+  public getOldestSolarwebTimestamp(): number | null {
+    return (
+      this.statement<{ ts: number | null }>(
+        'SELECT MIN(timestamp) AS ts FROM solarweb_readings',
+      ).get()?.ts ?? null
+    );
   }
 
   public getSetting(key: string): string | null {

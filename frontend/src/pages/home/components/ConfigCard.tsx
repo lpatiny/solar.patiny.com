@@ -85,12 +85,22 @@ export default function ConfigCard({
   const [panelEfficiency, setPanelEfficiency] = useState(
     config.panel_efficiency_pct,
   );
+  const [performanceRatio, setPerformanceRatio] = useState(
+    config.panel_performance_ratio,
+  );
+  const [tempCoeff, setTempCoeff] = useState(config.panel_temp_coeff_pct_per_c);
   const [savingPanel, setSavingPanel] = useState(false);
   const [panelSaveError, setPanelSaveError] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [syncingWeather, setSyncingWeather] = useState(false);
+  const [weatherSyncResult, setWeatherSyncResult] = useState<{
+    inserted: number;
+    years: number[];
+  } | null>(null);
+  const [weatherSyncError, setWeatherSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -108,13 +118,17 @@ export default function ConfigCard({
         body: JSON.stringify({
           panel_surface_m2: panelSurface,
           panel_efficiency_pct: panelEfficiency,
+          panel_performance_ratio: performanceRatio,
+          panel_temp_coeff_pct_per_c: tempCoeff,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const updated = (await res.json()) as ConfigData;
       onConfigChange(updated);
     } catch (error_) {
-      setPanelSaveError(error_ instanceof Error ? error_.message : 'Save failed');
+      setPanelSaveError(
+        error_ instanceof Error ? error_.message : 'Save failed',
+      );
     } finally {
       setSavingPanel(false);
     }
@@ -149,6 +163,25 @@ export default function ConfigCard({
         pollRef.current = null;
       }
       setSyncProgress(null);
+    }
+  }
+
+  async function handleSyncWeatherHistory() {
+    setSyncingWeather(true);
+    setWeatherSyncResult(null);
+    setWeatherSyncError(null);
+    try {
+      const res = await fetch('/api/weather/sync', { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setWeatherSyncResult(
+        (await res.json()) as { inserted: number; years: number[] },
+      );
+    } catch (error_) {
+      setWeatherSyncError(
+        error_ instanceof Error ? error_.message : 'Sync failed',
+      );
+    } finally {
+      setSyncingWeather(false);
     }
   }
 
@@ -202,11 +235,59 @@ export default function ConfigCard({
           }
         />
       </Row>
+      <Row label="Performance ratio">
+        <NumericInput
+          value={performanceRatio}
+          onValueChange={(v) => setPerformanceRatio(v)}
+          min={0.1}
+          max={1}
+          stepSize={0.01}
+          minorStepSize={null}
+          style={{ width: 80 }}
+          rightElement={
+            <span
+              style={{
+                color: 'var(--text-secondary)',
+                fontSize: 11,
+                padding: '0 6px',
+                lineHeight: '30px',
+              }}
+            >
+              (0–1)
+            </span>
+          }
+        />
+      </Row>
+      <Row label="Temp. coefficient">
+        <NumericInput
+          value={tempCoeff}
+          onValueChange={(v) => setTempCoeff(v)}
+          min={0}
+          max={1}
+          stepSize={0.01}
+          minorStepSize={null}
+          style={{ width: 80 }}
+          rightElement={
+            <span
+              style={{
+                color: 'var(--text-secondary)',
+                fontSize: 11,
+                padding: '0 6px',
+                lineHeight: '30px',
+              }}
+            >
+              %/°C
+            </span>
+          }
+        />
+      </Row>
       <Row
         label="Peak DC power"
         value={`${((panelSurface * panelEfficiency) / 100).toFixed(1)} kW`}
       />
-      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div
+        style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}
+      >
         <Button
           intent={Intent.PRIMARY}
           loading={savingPanel}
@@ -313,6 +394,40 @@ export default function ConfigCard({
         )}
         {syncError && !syncing && (
           <span style={{ fontSize: 11, color: '#fca5a5' }}>{syncError}</span>
+        )}
+      </div>
+
+      <SectionTitle title="MeteoSwiss Weather" />
+      <Row label="Stations" value="PRE (Saint-Prex) / PUY (Pully)" />
+      <Row label="Live polling" value="Every 10 min (automatic)" />
+      <div
+        style={{
+          marginTop: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <Button
+          intent={Intent.PRIMARY}
+          loading={syncingWeather}
+          disabled={syncingWeather}
+          onClick={() => void handleSyncWeatherHistory()}
+          size="small"
+        >
+          Sync Meteo History
+        </Button>
+        {weatherSyncResult && !syncingWeather && (
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+            {weatherSyncResult.inserted.toLocaleString()} readings inserted
+            {weatherSyncResult.years.length > 0 &&
+              ` (${weatherSyncResult.years[0]}–${weatherSyncResult.years.at(-1)})`}
+          </span>
+        )}
+        {weatherSyncError && !syncingWeather && (
+          <span style={{ fontSize: 11, color: '#fca5a5' }}>
+            {weatherSyncError}
+          </span>
         )}
       </div>
     </div>

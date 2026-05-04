@@ -263,7 +263,7 @@ export default function ElectricalCard({ realtime }: ElectricalCardProps) {
               value={fmt(realtime?.voltage_c_v ?? null, 1, 'V')}
             />
 
-            <SectionHeader title="Battery (SunSpec Model 124)" />
+            <SectionHeader title="Battery (BYD HVM 11.0)" />
             <ParamRow
               label="State of charge"
               value={fmt(realtime?.battery_soc ?? null, 1, '%')}

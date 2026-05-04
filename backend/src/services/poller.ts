@@ -6,7 +6,8 @@ import { fetchPowerFlow } from './fronius.ts';
 import { fetchStationReadings } from './meteoStationService.ts';
 import { closeModbusConnections, readModbusData } from './modbusReader.ts';
 import { syncRecentDays } from './solarweb.ts';
-import { scrapeRecentDays } from './solarwebScraper.ts';
+import { scrapeAllHistory, scrapeRecentDays } from './solarwebScraper.ts';
+import { syncWeatherHistory, syncWeatherRecent } from './weatherSyncService.ts';
 
 interface Logger {
   info: (msg: string) => void;
@@ -66,6 +67,12 @@ async function poll(): Promise<void> {
     const battery_soc = modbus?.battery_soc ?? rest.battery_soc;
     if (battery_soc !== null) lastValidSoc = battery_soc;
 
+    // P_Akku: positive = discharging, negative = charging
+    const battery_charging_w =
+      modbus?.battery_charging_w ?? (rest.battery_w < 0 ? -rest.battery_w : 0);
+    const battery_discharging_w =
+      modbus?.battery_discharging_w ?? Math.max(rest.battery_w, 0);
+
     currentReading = {
       ...rest,
       battery_soc: lastValidSoc ?? 0,
@@ -80,8 +87,8 @@ async function poll(): Promise<void> {
       frequency_hz: modbus?.frequency_hz ?? null,
       pv1_power_w: modbus?.pv1_power_w ?? null,
       pv2_power_w: modbus?.pv2_power_w ?? null,
-      battery_charging_w: modbus?.battery_charging_w ?? null,
-      battery_discharging_w: modbus?.battery_discharging_w ?? null,
+      battery_charging_w,
+      battery_discharging_w,
       meter_power_w: modbus?.meter_power_w ?? null,
     };
 
@@ -101,8 +108,8 @@ async function poll(): Promise<void> {
       modbus?.frequency_hz ?? null,
       modbus?.pv1_power_w ?? null,
       modbus?.pv2_power_w ?? null,
-      modbus?.battery_charging_w ?? null,
-      modbus?.battery_discharging_w ?? null,
+      battery_charging_w,
+      battery_discharging_w,
       modbus?.meter_power_w ?? null,
     );
   } catch (error) {
@@ -130,6 +137,8 @@ export function startPoller(logger: Logger): void {
   pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
   void syncRecentDays();
   void scrapeRecentDays();
+  // Fill any gaps left by downtime; scrapeAllHistory skips complete days so this is cheap
+  void scrapeAllHistory();
   solarWebTimer = setInterval(
     () => {
       void syncRecentDays();
@@ -139,6 +148,9 @@ export function startPoller(logger: Logger): void {
   );
   void pollWeather();
   weatherTimer = setInterval(() => void pollWeather(), WEATHER_INTERVAL_MS);
+  // Backfill all historical decades on startup, then sync recent window hourly to fill gaps
+  void syncWeatherHistory();
+  setInterval(() => void syncWeatherRecent(), 60 * 60 * 1000);
 }
 
 export function stopPoller(): void {

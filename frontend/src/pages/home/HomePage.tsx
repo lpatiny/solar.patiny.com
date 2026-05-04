@@ -10,6 +10,7 @@ import {
 import type { ChangeEvent } from 'react';
 import { useEffect, useState } from 'react';
 
+import AnalysisTab from './components/AnalysisTab.tsx';
 import BatteryCard from './components/BatteryCard.tsx';
 import ChargingStrategyChart from './components/ChargingStrategyChart.tsx';
 import ConfigCard from './components/ConfigCard.tsx';
@@ -18,6 +19,7 @@ import ElectricalCard from './components/ElectricalCard.tsx';
 import EnergyChart from './components/EnergyChart.tsx';
 import HistoryChart from './components/HistoryChart.tsx';
 import NeighborExportCard from './components/NeighborExportCard.tsx';
+import WeatherChart from './components/WeatherChart.tsx';
 import PowerFlowCard from './components/PowerFlowCard.tsx';
 
 type BatteryMode = 'auto' | 'charge' | 'discharge' | 'idle';
@@ -69,6 +71,8 @@ export interface ConfigData {
   poll_interval_ms: number;
   panel_surface_m2: number;
   panel_efficiency_pct: number;
+  panel_performance_ratio: number;
+  panel_temp_coeff_pct_per_c: number;
 }
 
 async function apiFetch<T>(url: string): Promise<T> {
@@ -94,13 +98,51 @@ export default function HomePage() {
   const [todayExport, setTodayExport] = useState<number | undefined>();
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTab, setSelectedTab] = useState<string>(
+    () => localStorage.getItem('solar-active-tab') ?? 'overview',
+  );
   const [historyRange, setHistoryRange] = useState<{
     from: number;
     to: number;
-  }>(() => ({
-    from: Math.floor(Date.now() / 1000) - 86_400,
-    to: Math.floor(Date.now() / 1000),
-  }));
+  }>(() => {
+    try {
+      const saved = localStorage.getItem('solar-history-range');
+      if (saved) {
+        const parsed = JSON.parse(saved) as { from: number; to: number };
+        if (typeof parsed.from === 'number' && typeof parsed.to === 'number') {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore invalid stored value
+    }
+    return {
+      from: Math.floor(Date.now() / 1000) - 86_400,
+      to: Math.floor(Date.now() / 1000),
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('solar-history-range', JSON.stringify(historyRange));
+  }, [historyRange]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement) return;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const delta = e.key === 'ArrowLeft' ? -1 : 1;
+        setHistoryRange((r) => {
+          const duration = r.to - r.from;
+          return {
+            from: r.from + delta * duration,
+            to: r.to + delta * duration,
+          };
+        });
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Realtime + config polling
   useEffect(() => {
@@ -212,13 +254,38 @@ export default function HomePage() {
     setHistoryRange({ from: to - days * 86_400, to });
   }
 
-  function setThisYearPreset() {
-    const start = new Date();
-    start.setMonth(0, 1);
-    start.setHours(0, 0, 0, 0);
+  function setMonthPreset(year: number, month: number) {
+    const start = new Date(year, month, 1, 0, 0, 0);
+    const end = new Date(year, month + 1, 0, 23, 59, 59);
     setHistoryRange({
       from: Math.floor(start.getTime() / 1000),
-      to: Math.floor(Date.now() / 1000),
+      to: Math.floor(end.getTime() / 1000),
+    });
+  }
+
+  function setFullYearPreset(year: number) {
+    const start = new Date(year, 0, 1, 0, 0, 0);
+    const end = new Date(year, 11, 31, 23, 59, 59);
+    setHistoryRange({
+      from: Math.floor(start.getTime() / 1000),
+      to: Math.floor(end.getTime() / 1000),
+    });
+  }
+
+  function navigateMonth(delta: number) {
+    const mid = new Date(((historyRange.from + historyRange.to) / 2) * 1000);
+    setMonthPreset(mid.getFullYear(), mid.getMonth() + delta);
+  }
+
+  function navigateYear(delta: number) {
+    const mid = new Date(((historyRange.from + historyRange.to) / 2) * 1000);
+    setFullYearPreset(mid.getFullYear() + delta);
+  }
+
+  function navigatePeriod(delta: number) {
+    setHistoryRange((r) => {
+      const duration = r.to - r.from;
+      return { from: r.from + delta * duration, to: r.to + delta * duration };
     });
   }
 
@@ -251,7 +318,7 @@ export default function HomePage() {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
         gap: 16,
         paddingTop: 20,
       }}
@@ -282,22 +349,59 @@ export default function HomePage() {
     </div>
   );
 
+  const modbusDisabled =
+    !realtime || realtime.modbus_status === 'disabled';
+
   const electricalPanel = (
     <div style={{ paddingTop: 20 }}>
       <ElectricalCard realtime={realtime} />
+      {modbusDisabled && (
+        <div style={{ marginTop: 16 }}>
+          <ChargingStrategyChart />
+        </div>
+      )}
     </div>
   );
+
+  const midDate = new Date(((historyRange.from + historyRange.to) / 2) * 1000);
+  const monthLabel = midDate.toLocaleDateString([], {
+    month: 'short',
+    year: 'numeric',
+  });
+  const yearLabel = String(midDate.getFullYear());
 
   const rangeControls = (
     <div
       style={{
-        display: 'flex',
         alignItems: 'center',
+        background: 'var(--bg)',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex',
+        flexWrap: 'wrap',
         gap: 8,
         marginBottom: 12,
-        flexWrap: 'wrap',
+        paddingBottom: 10,
+        paddingTop: 10,
+        position: 'sticky',
+        top: 0,
+        zIndex: 10,
       }}
     >
+      <ButtonGroup variant="minimal">
+        <Button
+          size="small"
+          icon="arrow-left"
+          onClick={() => navigatePeriod(-1)}
+          title="Previous period (←)"
+        />
+        <Button
+          size="small"
+          icon="arrow-right"
+          onClick={() => navigatePeriod(1)}
+          title="Next period (→)"
+        />
+      </ButtonGroup>
+
       <ButtonGroup variant="minimal">
         <Button size="small" onClick={setLast24h}>
           24h
@@ -314,13 +418,51 @@ export default function HomePage() {
         <Button size="small" onClick={() => setLastNDays(30)}>
           30d
         </Button>
-        <Button size="small" onClick={setThisYearPreset}>
-          Year
-        </Button>
         <Button size="small" onClick={setAllTimePreset}>
           All time
         </Button>
       </ButtonGroup>
+
+      <ButtonGroup variant="minimal">
+        <Button
+          size="small"
+          icon="chevron-left"
+          onClick={() => navigateMonth(-1)}
+        />
+        <Button
+          size="small"
+          onClick={() =>
+            setMonthPreset(midDate.getFullYear(), midDate.getMonth())
+          }
+        >
+          {monthLabel}
+        </Button>
+        <Button
+          size="small"
+          icon="chevron-right"
+          onClick={() => navigateMonth(1)}
+        />
+      </ButtonGroup>
+
+      <ButtonGroup variant="minimal">
+        <Button
+          size="small"
+          icon="chevron-left"
+          onClick={() => navigateYear(-1)}
+        />
+        <Button
+          size="small"
+          onClick={() => setFullYearPreset(midDate.getFullYear())}
+        >
+          {yearLabel}
+        </Button>
+        <Button
+          size="small"
+          icon="chevron-right"
+          onClick={() => navigateYear(1)}
+        />
+      </ButtonGroup>
+
       <input
         type="date"
         className={Classes.INPUT}
@@ -345,6 +487,8 @@ export default function HomePage() {
       <EnergyChart from={historyRange.from} to={historyRange.to} />
       <div style={{ marginTop: 16 }} />
       <HistoryChart from={historyRange.from} to={historyRange.to} />
+      <div style={{ marginTop: 16 }} />
+      <WeatherChart from={historyRange.from} to={historyRange.to} />
       <div style={{ marginTop: 16 }} />
       <ChargingStrategyChart
         historyDate={new Date(historyRange.from * 1000)
@@ -378,6 +522,8 @@ export default function HomePage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 8,
           marginBottom: 20,
         }}
       >
@@ -397,10 +543,21 @@ export default function HomePage() {
       </div>
 
       {/* Tabs */}
-      <Tabs id="main" defaultSelectedTabId="overview" size="large" animate>
+      <Tabs
+        id="main"
+        selectedTabId={selectedTab}
+        onChange={(id) => {
+          const tab = String(id);
+          setSelectedTab(tab);
+          localStorage.setItem('solar-active-tab', tab);
+        }}
+        size="large"
+        animate
+      >
         <Tab id="overview" title="Overview" panel={overviewPanel} />
         <Tab id="electrical" title="Electrical" panel={electricalPanel} />
         <Tab id="history" title="History" panel={historyPanel} />
+        <Tab id="analysis" title="Analysis" panel={<AnalysisTab />} />
         <Tab id="config" title="Configuration" panel={configPanel} />
       </Tabs>
     </div>

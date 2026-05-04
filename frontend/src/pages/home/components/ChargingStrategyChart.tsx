@@ -92,12 +92,16 @@ function kwhToW(kwh: number, durationH: number): number {
   return durationH > 0 ? (kwh / durationH) * 1000 : 0;
 }
 
-// Nivo custom layer: renders series ending with "_forecast" as dashed lines
+// Nivo custom layers
 interface NivoLineSerie {
   id: string;
   color: string;
   data: Array<{ position: { x: number; y: number } }>;
 }
+
+type NivoLayer = NonNullable<
+  Parameters<typeof ResponsiveLine>[0]['layers']
+>[number];
 
 interface MixedLineLayerProps {
   series: NivoLineSerie[];
@@ -123,6 +127,23 @@ function MixedLineLayer({ series, lineGenerator }: MixedLineLayerProps) {
       />
     );
   });
+}
+
+function ForecastDotsLayer({ series }: { series: NivoLineSerie[] }) {
+  return series
+    .filter((s) => s.id.endsWith('_forecast'))
+    .flatMap((serie, si) =>
+      serie.data.map((d, di) => (
+        <circle
+          key={`${si}-${di}`}
+          cx={d.position.x}
+          cy={d.position.y}
+          r={4}
+          fill={serie.color}
+          opacity={0.8}
+        />
+      )),
+    );
 }
 
 // Tick values at 3-hour boundaries for a full day
@@ -287,7 +308,7 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
       chargeW: 0,
       exportW: 0,
       socPct: lastSlot.batterySocEndPct,
-      isPast: true,
+      isPast: lastSlot.isPast,
     });
   }
 
@@ -309,38 +330,23 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
     },
   ];
 
+  // SOC: actual measured (solid) + projected (dashed with dots)
+  const socActualPts = points
+    .filter((p) => p.isPast)
+    .map((p) => ({ x: p.xMs, y: Math.round(p.socPct) }));
+  const bridgePt = socActualPts.at(-1);
+  const futureSocPts = points
+    .filter((p) => !p.isPast)
+    .map((p) => ({ x: p.xMs, y: Math.round(p.socPct) }));
+  const socForecastPts = bridgePt
+    ? [bridgePt, ...futureSocPts]
+    : futureSocPts;
+
   const socLines = [
-    {
-      id: 'Battery SoC',
-      color: '#22d3ee',
-      data: points.map((p) => ({ x: p.xMs, y: Math.round(p.socPct) })),
-    },
-  ];
-
-  // Temperature: actual (solid) + forecast (dashed)
-  const meteoActual = data.meteoReadings.filter(
-    (r): r is MeteoReading & { temperatureC: number } =>
-      r.temperatureC !== null && r.timestamp * 1000 <= nowMs,
-  );
-  const forecastSlotPoints = data.slots.map((s) => ({
-    x: (s.timestamp + (s.endTimestamp - s.timestamp) / 2) * 1000,
-    y: Math.round(s.temperatureC * 10) / 10,
-  }));
-
-  const temperatureLines = [
-    {
-      id: 'temp_actual',
-      color: '#fb923c',
-      data: meteoActual.map((r) => ({
-        x: r.timestamp * 1000,
-        y: r.temperatureC,
-      })),
-    },
-    {
-      id: 'temp_forecast',
-      color: '#fb923c',
-      data: forecastSlotPoints,
-    },
+    { id: 'soc_actual', color: '#22d3ee', data: socActualPts },
+    ...(socForecastPts.length > 0
+      ? [{ id: 'soc_forecast', color: '#22d3ee', data: socForecastPts }]
+      : []),
   ];
 
   // Panel power: actual measured (solid) + predicted (dashed) + clear-sky (dashed, lighter)
@@ -448,7 +454,7 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
         <ResponsiveLine
           data={powerLines}
           theme={nivoTheme}
-          colors={({ color }) => color}
+          colors={(d) => (d as unknown as { color: string }).color}
           margin={{ top: 8, right: 20, bottom: 48, left: 60 }}
           xScale={{
             type: 'linear',
@@ -497,7 +503,7 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
         <ResponsiveLine
           data={socLines}
           theme={nivoTheme}
-          colors={({ color }) => color}
+          colors={(d) => (d as unknown as { color: string }).color}
           margin={{ top: 8, right: 20, bottom: 30, left: 48 }}
           xScale={{
             type: 'linear',
@@ -524,67 +530,14 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
           lineWidth={2}
           useMesh
           markers={nowMarker}
-        />
-      </div>
-
-      {/* Temperature chart */}
-      <span className="card-title" style={{ marginTop: 16 }}>
-        Temperature
-      </span>
-      <div
-        style={{
-          fontSize: 10,
-          color: 'var(--text-secondary)',
-          marginBottom: 4,
-        }}
-      >
-        <span style={{ color: '#fb923c' }}>— measured</span>
-        <span style={{ marginLeft: 10, color: '#fb923c', opacity: 0.7 }}>
-          - - forecast
-        </span>
-      </div>
-      <div style={{ height: 120 }}>
-        <ResponsiveLine
-          data={temperatureLines}
-          theme={nivoTheme}
-          colors={({ color }) => color}
-          margin={{ top: 8, right: 20, bottom: 30, left: 48 }}
-          xScale={{
-            type: 'linear',
-            min: midnightTs * 1000,
-            max: (midnightTs + 86_400) * 1000,
-          }}
-          yScale={{ type: 'linear', min: 'auto', max: 'auto' }}
-          curve="monotoneX"
-          axisBottom={{
-            tickSize: 0,
-            tickPadding: 6,
-            tickRotation: -30,
-            tickValues: ticks,
-            format: formatTickMs,
-          }}
-          axisLeft={{
-            tickSize: 0,
-            tickPadding: 6,
-            format: (v: number) => `${v}°C`,
-            tickValues: 4,
-          }}
-          enablePoints={false}
-          enableGridX={false}
-          useMesh
-          markers={nowMarker}
           layers={[
             'grid',
             'markers',
             'axes',
-            MixedLineLayer as Parameters<
-              typeof ResponsiveLine
-            >[0]['layers'] extends Array<infer L>
-              ? L
-              : never,
+            MixedLineLayer as unknown as NivoLayer,
+            ForecastDotsLayer as unknown as NivoLayer,
             'crosshair',
             'mesh',
-            'legends',
           ]}
         />
       </div>
@@ -610,7 +563,7 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
         <ResponsiveLine
           data={irradianceLines}
           theme={nivoTheme}
-          colors={({ color }) => color}
+          colors={(d) => (d as unknown as { color: string }).color}
           margin={{ top: 8, right: 20, bottom: 30, left: 56 }}
           xScale={{
             type: 'linear',
@@ -640,11 +593,7 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
             'grid',
             'markers',
             'axes',
-            MixedLineLayer as Parameters<
-              typeof ResponsiveLine
-            >[0]['layers'] extends Array<infer L>
-              ? L
-              : never,
+            MixedLineLayer as unknown as NivoLayer,
             'crosshair',
             'mesh',
             'legends',
@@ -715,25 +664,10 @@ function HistoryStrategyChart({ data }: { data: HistoryForecast }) {
     },
   ];
 
-  const meteoTemp = data.meteoReadings.filter(
-    (r): r is MeteoReading & { temperatureC: number } =>
-      r.temperatureC !== null,
-  );
   const meteoRad = data.meteoReadings.filter(
     (r): r is MeteoReading & { globalRadiationWm2: number } =>
       r.globalRadiationWm2 !== null,
   );
-
-  const temperatureLines = [
-    {
-      id: 'temp_actual',
-      color: '#fb923c',
-      data: meteoTemp.map((r) => ({
-        x: r.timestamp * 1000,
-        y: r.temperatureC,
-      })),
-    },
-  ];
 
   const { pvScalingFactor } = data;
   const irradianceLines = [
@@ -762,7 +696,7 @@ function HistoryStrategyChart({ data }: { data: HistoryForecast }) {
         <ResponsiveLine
           data={powerLines}
           theme={nivoTheme}
-          colors={({ color }) => color}
+          colors={(d) => (d as unknown as { color: string }).color}
           margin={{ top: 8, right: 20, bottom: 48, left: 60 }}
           xScale={{
             type: 'linear',
@@ -810,7 +744,7 @@ function HistoryStrategyChart({ data }: { data: HistoryForecast }) {
         <ResponsiveLine
           data={socLines}
           theme={nivoTheme}
-          colors={({ color }) => color}
+          colors={(d) => (d as unknown as { color: string }).color}
           margin={{ top: 8, right: 20, bottom: 30, left: 48 }}
           xScale={{
             type: 'linear',
@@ -839,47 +773,6 @@ function HistoryStrategyChart({ data }: { data: HistoryForecast }) {
         />
       </div>
 
-      {/* Temperature chart (historical, solid only) */}
-      {meteoTemp.length > 0 && (
-        <>
-          <span className="card-title" style={{ marginTop: 16 }}>
-            Temperature
-          </span>
-          <div style={{ height: 120 }}>
-            <ResponsiveLine
-              data={temperatureLines}
-              theme={nivoTheme}
-              colors={({ color }) => color}
-              margin={{ top: 8, right: 20, bottom: 30, left: 48 }}
-              xScale={{
-                type: 'linear',
-                min: midnightTs * 1000,
-                max: (midnightTs + 86_400) * 1000,
-              }}
-              yScale={{ type: 'linear', min: 'auto', max: 'auto' }}
-              curve="monotoneX"
-              axisBottom={{
-                tickSize: 0,
-                tickPadding: 6,
-                tickRotation: -30,
-                tickValues: ticks,
-                format: formatTickMs,
-              }}
-              axisLeft={{
-                tickSize: 0,
-                tickPadding: 6,
-                format: (v: number) => `${v}°C`,
-                tickValues: 4,
-              }}
-              enablePoints={false}
-              enableGridX={false}
-              lineWidth={2}
-              useMesh
-            />
-          </div>
-        </>
-      )}
-
       {/* Panel power chart (historical, solid only) */}
       {meteoRad.length > 0 && (
         <>
@@ -890,7 +783,7 @@ function HistoryStrategyChart({ data }: { data: HistoryForecast }) {
             <ResponsiveLine
               data={irradianceLines}
               theme={nivoTheme}
-              colors={({ color }) => color}
+              colors={(d) => (d as unknown as { color: string }).color}
               margin={{ top: 8, right: 20, bottom: 30, left: 56 }}
               xScale={{
                 type: 'linear',

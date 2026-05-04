@@ -1,59 +1,42 @@
-/* eslint-disable @typescript-eslint/naming-convention -- API response fields use snake_case */
 import { ResponsiveLine } from '@nivo/line';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { BrushLayer } from './BrushLayer.tsx';
-
-type HistoryResolution = 'hourly' | 'daily' | 'monthly';
-
-interface HistoryPoint {
-  timestamp: number;
-  production_w: number;
-  grid_w: number;
-  battery_w: number;
-  consumption_w: number;
-  battery_soc_max: number | null;
-  battery_soc_min: number | null;
-}
+import { SeasonLayer } from './SeasonLayer.tsx';
+import type { HistoryPoint, HistoryResolution } from './historyChartUtils.ts';
+import {
+  buildOverlayNivoData,
+  buildOverlaySocData,
+  buildPowerLegendData,
+  buildSocLegendData,
+  buildTimelineNivoData,
+  buildTimelineSocData,
+  dailyKeyToMonthYear,
+  dailyKeyToShort,
+  deriveResolution,
+  formatDateRange,
+  formatTime,
+  formatTimeOfDay,
+  groupByDay,
+  hourlyKeyToDate,
+  hourlyKeyToTime,
+  nivoTheme,
+} from './historyChartUtils.ts';
 
 interface HistoryChartProps {
   from: number;
   to: number;
 }
 
-function deriveResolution(from: number, to: number): HistoryResolution {
-  const days = (to - from) / 86_400;
-  if (days > 90) return 'monthly';
-  if (days > 1) return 'daily';
-  return 'hourly';
-}
-
-function formatTime(ts: number, resolution: HistoryResolution): string {
-  const d = new Date(ts * 1000);
-  if (resolution === 'monthly') {
-    return d.toLocaleDateString([], { month: 'short', year: 'numeric' });
-  }
-  if (resolution === 'daily') {
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  }
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDateRange(from: number, to: number): string {
-  const f = new Date(from * 1000);
-  const t = new Date(to * 1000);
-  const sameDay = f.toDateString() === t.toDateString();
-  if (sameDay) {
-    return f.toLocaleDateString([], { dateStyle: 'medium' });
-  }
-  const fromOptions: Intl.DateTimeFormatOptions =
-    f.getFullYear() !== t.getFullYear()
-      ? { month: 'short', day: 'numeric', year: 'numeric' }
-      : { month: 'short', day: 'numeric' };
-  return `${f.toLocaleDateString([], fromOptions)} – ${t.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`;
-}
-
-function ResolutionButton({
+/**
+ * Pill-shaped toggle/selection button used for resolution and overlay controls.
+ * @param root0 - Component props.
+ * @param root0.label - Button label text.
+ * @param root0.active - Whether the button is in active/selected state.
+ * @param root0.onClick - Click handler.
+ * @returns The button element.
+ */
+function ToggleButton({
   label,
   active,
   onClick,
@@ -82,52 +65,38 @@ function ResolutionButton({
   );
 }
 
-const nivoTheme = {
-  background: 'transparent',
-  text: { fill: '#94a3b8', fontSize: 11 },
-  axis: {
-    ticks: {
-      line: { stroke: '#334155' },
-      text: { fill: '#94a3b8', fontSize: 11 },
-    },
-    legend: { text: { fill: '#94a3b8', fontSize: 12 } },
-  },
-  grid: { line: { stroke: '#334155', strokeDasharray: '3 3' } },
-  legends: { text: { fill: '#94a3b8', fontSize: 12 } },
-  crosshair: { line: { stroke: '#94a3b8' } },
-  tooltip: {
-    container: {
-      background: '#263347',
-      border: '1px solid #334155',
-      borderRadius: 8,
-      color: '#f1f5f9',
-      fontSize: 12,
-    },
-  },
-};
-
+/**
+ * Historical power and battery SOC charts with resolution selector and day-overlay mode.
+ * @param root0 - Component props.
+ * @param root0.from - Start of the displayed range as a unix timestamp (seconds).
+ * @param root0.to - End of the displayed range as a unix timestamp (seconds).
+ * @returns The history chart card.
+ */
 export default function HistoryChart({ from, to }: HistoryChartProps) {
   const autoResolution = deriveResolution(from, to);
   const [manualResolution, setManualResolution] =
     useState<HistoryResolution | null>(null);
+  const [overlayMode, setOverlayMode] = useState(false);
   const [prevFrom, setPrevFrom] = useState(from);
   const [prevTo, setPrevTo] = useState(to);
   const [zoomIndices, setZoomIndices] = useState<{
     start: number;
     end: number;
   } | null>(null);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
   if (from !== prevFrom || to !== prevTo) {
     setPrevFrom(from);
     setPrevTo(to);
     setManualResolution(null);
     setZoomIndices(null);
+    setOverlayMode(false);
+    setHiddenIds(new Set());
   }
 
   const resolution = manualResolution ?? autoResolution;
   const [data, setData] = useState<HistoryPoint[]>([]);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
-
   const fetchKey = `${resolution}-${from}-${to}`;
   const loading = loadedKey !== fetchKey;
 
@@ -137,27 +106,182 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
     [data, zoomIndices],
   );
 
+  const overlayDays = useMemo(
+    () => (overlayMode ? groupByDay(visibleData) : null),
+    [overlayMode, visibleData],
+  );
+
+  const nivoData = useMemo(
+    () =>
+      overlayDays
+        ? buildOverlayNivoData(overlayDays, hiddenIds)
+        : buildTimelineNivoData(visibleData, resolution, hiddenIds),
+    [overlayDays, visibleData, resolution, hiddenIds],
+  );
+
+  const socData = useMemo(
+    () =>
+      overlayDays
+        ? buildOverlaySocData(overlayDays, hiddenIds)
+        : buildTimelineSocData(visibleData, resolution, hiddenIds),
+    [overlayDays, visibleData, resolution, hiddenIds],
+  );
+
+  const powerLegendData = useMemo(
+    () => buildPowerLegendData(overlayDays, hiddenIds),
+    [overlayDays, hiddenIds],
+  );
+
+  const socLegendData = useMemo(
+    () => buildSocLegendData(overlayDays, hiddenIds),
+    [overlayDays, hiddenIds],
+  );
+
+  const toggleId = useCallback((id: string) => {
+    setHiddenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleOverlayToggle = useCallback(() => {
+    setOverlayMode((prev) => !prev);
+    setHiddenIds(new Set());
+  }, []);
+
+  const handleResolutionChange = useCallback((res: HistoryResolution) => {
+    setManualResolution(res);
+    if (res !== 'hourly') {
+      setOverlayMode(false);
+      setHiddenIds(new Set());
+    }
+  }, []);
+
   const handleZoom = useCallback(
-    (startIdx: number, endIdx: number) => {
-      const base = zoomIndices?.start ?? 0;
-      setZoomIndices({ start: base + startIdx, end: base + endIdx });
+    (startFrac: number, endFrac: number) => {
+      const len = visibleData.length;
+      const startIdx = Math.round(startFrac * (len - 1));
+      const endIdx = Math.round(endFrac * (len - 1));
+      if (endIdx > startIdx) {
+        const base = zoomIndices?.start ?? 0;
+        setZoomIndices({ start: base + startIdx, end: base + endIdx });
+      }
     },
-    [zoomIndices],
+    [zoomIndices, visibleData.length],
   );
 
   const resetZoom = useCallback(() => setZoomIndices(null), []);
+
+  const timestamps = useMemo(
+    () => visibleData.map((p) => p.timestamp),
+    [visibleData],
+  );
+
+  const isMultiDayHourly = useMemo(() => {
+    if (overlayMode || resolution !== 'hourly') return false;
+    const first = visibleData[0];
+    const last = visibleData.at(-1);
+    return (
+      first !== undefined &&
+      last !== undefined &&
+      new Date(first.timestamp * 1000).toDateString() !==
+        new Date(last.timestamp * 1000).toDateString()
+    );
+  }, [overlayMode, resolution, visibleData]);
+
+  const isMultiYearDaily = useMemo(() => {
+    if (resolution !== 'daily') return false;
+    const first = visibleData[0];
+    const last = visibleData.at(-1);
+    return (
+      first !== undefined &&
+      last !== undefined &&
+      new Date(first.timestamp * 1000).getFullYear() !==
+        new Date(last.timestamp * 1000).getFullYear()
+    );
+  }, [resolution, visibleData]);
+
+  const tickValues = useMemo(() => {
+    if (isMultiDayHourly) {
+      // One tick per calendar day, subsampled to ~8 visible labels
+      const daysSeen = new Set<string>();
+      const dayTicks: string[] = [];
+      for (const p of visibleData) {
+        const dateKey = new Date(p.timestamp * 1000).toDateString();
+        if (!daysSeen.has(dateKey)) {
+          daysSeen.add(dateKey);
+          dayTicks.push(formatTime(p.timestamp, resolution));
+        }
+      }
+      const step = Math.max(1, Math.round(dayTicks.length / 8));
+      return dayTicks.filter((_, i) => i % step === 0);
+    }
+    if (isMultiYearDaily) {
+      // One tick per calendar month, subsampled to ~8 visible labels
+      const monthsSeen = new Set<string>();
+      const monthTicks: string[] = [];
+      for (const p of visibleData) {
+        const d = new Date(p.timestamp * 1000);
+        const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+        if (!monthsSeen.has(monthKey)) {
+          monthsSeen.add(monthKey);
+          monthTicks.push(formatTime(p.timestamp, resolution));
+        }
+      }
+      const step = Math.max(1, Math.round(monthTicks.length / 8));
+      return monthTicks.filter((_, i) => i % step === 0);
+    }
+    const sourcePoints = overlayDays?.[0]?.[1] ?? visibleData;
+    const step = Math.max(1, Math.round(sourcePoints.length / 8));
+    return sourcePoints
+      .filter((_, i) => i % step === 0)
+      .map((p) =>
+        overlayMode
+          ? formatTimeOfDay(p.timestamp)
+          : formatTime(p.timestamp, resolution),
+      );
+  }, [
+    visibleData,
+    overlayDays,
+    resolution,
+    overlayMode,
+    isMultiDayHourly,
+    isMultiYearDaily,
+  ]);
+
+  const axisBottomFormat = useMemo(() => {
+    if (resolution === 'hourly' && !overlayMode) {
+      return isMultiDayHourly ? hourlyKeyToDate : hourlyKeyToTime;
+    }
+    if (resolution === 'daily') {
+      return isMultiYearDaily ? dailyKeyToMonthYear : dailyKeyToShort;
+    }
+    return undefined;
+  }, [resolution, overlayMode, isMultiDayHourly, isMultiYearDaily]);
+
+  const makeSeasonLayer = useCallback(
+    (props: { innerWidth: number; innerHeight: number }) => (
+      <SeasonLayer
+        innerWidth={props.innerWidth}
+        innerHeight={props.innerHeight}
+        timestamps={timestamps}
+      />
+    ),
+    [timestamps],
+  );
 
   const makeBrushLayer = useCallback(
     (props: { innerWidth: number; innerHeight: number }) => (
       <BrushLayer
         innerWidth={props.innerWidth}
         innerHeight={props.innerHeight}
-        dataLength={visibleData.length}
         onZoom={handleZoom}
         onReset={resetZoom}
       />
     ),
-    [visibleData.length, handleZoom, resetZoom],
+    [handleZoom, resetZoom],
   );
 
   useEffect(() => {
@@ -190,23 +314,60 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
         )
       : formatDateRange(from, to);
 
-  const resolutionButtons = (
-    <div style={{ display: 'flex', gap: 6 }}>
-      <ResolutionButton
-        label="Hour"
-        active={resolution === 'hourly'}
-        onClick={() => setManualResolution('hourly')}
-      />
-      <ResolutionButton
-        label="Day"
-        active={resolution === 'daily'}
-        onClick={() => setManualResolution('daily')}
-      />
-      <ResolutionButton
-        label="Month"
-        active={resolution === 'monthly'}
-        onClick={() => setManualResolution('monthly')}
-      />
+  const chartLayers = overlayMode
+    ? ([
+        'grid',
+        'markers',
+        'axes',
+        'areas',
+        'crosshair',
+        'lines',
+        'points',
+        'slices',
+        'mesh',
+        'legends',
+      ] as const)
+    : ([
+        makeSeasonLayer,
+        'grid',
+        'markers',
+        'axes',
+        'areas',
+        'crosshair',
+        'lines',
+        'points',
+        'slices',
+        'mesh',
+        'legends',
+        makeBrushLayer,
+      ] as const);
+
+  const controls = (
+    <div style={{ alignItems: 'center', display: 'flex', gap: 6 }}>
+      {resolution === 'hourly' && (
+        <ToggleButton
+          label="Overlay"
+          active={overlayMode}
+          onClick={handleOverlayToggle}
+        />
+      )}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <ToggleButton
+          label="Hour"
+          active={resolution === 'hourly'}
+          onClick={() => handleResolutionChange('hourly')}
+        />
+        <ToggleButton
+          label="Day"
+          active={resolution === 'daily'}
+          onClick={() => handleResolutionChange('daily')}
+        />
+        <ToggleButton
+          label="Month"
+          active={resolution === 'monthly'}
+          onClick={() => handleResolutionChange('monthly')}
+        />
+      </div>
     </div>
   );
 
@@ -224,7 +385,7 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
           <span className="card-title" style={{ margin: 0 }}>
             {rangeLabel} — Power
           </span>
-          {resolutionButtons}
+          {controls}
         </div>
         <div
           style={{
@@ -239,70 +400,6 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
     );
   }
 
-  const nivoData = [
-    {
-      id: 'Solar',
-      color: '#fbbf24',
-      data: visibleData.map((p) => ({
-        x: formatTime(p.timestamp, resolution),
-        y: Math.round(p.production_w),
-      })),
-    },
-    {
-      id: 'Consumption',
-      color: '#c084fc',
-      data: visibleData.map((p) => ({
-        x: formatTime(p.timestamp, resolution),
-        y: Math.round(p.consumption_w),
-      })),
-    },
-    {
-      id: 'Grid injection',
-      color: '#34d399',
-      data: visibleData.map((p) => ({
-        x: formatTime(p.timestamp, resolution),
-        y: p.grid_w < 0 ? Math.round(-p.grid_w) : 0,
-      })),
-    },
-  ];
-
-  const socData = [
-    {
-      id: 'Max SOC (%)',
-      color: '#60a5fa',
-      data: visibleData
-        .filter((p) => p.battery_soc_max !== null)
-        .map((p) => ({
-          x: formatTime(p.timestamp, resolution),
-          y: Math.round(p.battery_soc_max as number),
-        })),
-    },
-    {
-      id: 'Min SOC (%)',
-      color: '#818cf8',
-      data: visibleData
-        .filter((p) => p.battery_soc_min !== null)
-        .map((p) => ({
-          x: formatTime(p.timestamp, resolution),
-          y: Math.round(p.battery_soc_min as number),
-        })),
-    },
-  ];
-
-  const brushLayers = [
-    'grid',
-    'markers',
-    'axes',
-    'areas',
-    'crosshair',
-    'lines',
-    'points',
-    'slices',
-    'mesh',
-    'legends',
-    makeBrushLayer,
-  ] as const;
-
   return (
     <div className="card">
       <div
@@ -316,7 +413,7 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
         <span className="card-title" style={{ margin: 0 }}>
           {rangeLabel} — Power
         </span>
-        {resolutionButtons}
+        {controls}
       </div>
 
       {loading ? (
@@ -335,14 +432,15 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
             data={nivoData}
             theme={nivoTheme}
             colors={({ color }) => color}
-            margin={{ top: 10, right: 60, bottom: 50, left: 70 }}
+            margin={{ top: 10, right: 60, bottom: 40, left: 70 }}
             xScale={{ type: 'point' }}
             yScale={{ type: 'linear', min: 'auto', max: 'auto' }}
             axisBottom={{
               tickSize: 0,
               tickPadding: 8,
               tickRotation: -30,
-              tickValues: 8,
+              tickValues,
+              format: axisBottomFormat,
             }}
             axisLeft={{
               tickSize: 0,
@@ -355,16 +453,19 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
             curve="monotoneX"
             lineWidth={2}
             useMesh={false}
-            layers={brushLayers}
+            layers={chartLayers}
             legends={[
               {
-                anchor: 'bottom-right',
-                direction: 'row',
-                translateY: 48,
-                itemWidth: 100,
-                itemHeight: 14,
+                anchor: 'top-right',
+                direction: 'column',
+                translateX: -5,
+                translateY: 5,
+                itemWidth: overlayMode ? 160 : 120,
+                itemHeight: 18,
                 symbolSize: 10,
                 symbolShape: 'circle',
+                onClick: (datum) => toggleId(datum.id as string),
+                data: powerLegendData,
               },
             ]}
           />
@@ -383,7 +484,7 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
         <span className="card-title" style={{ margin: 0 }}>
           Battery State of Charge
         </span>
-        {resolutionButtons}
+        {controls}
       </div>
 
       {loading ? (
@@ -402,14 +503,15 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
             data={socData}
             theme={nivoTheme}
             colors={({ color }) => color}
-            margin={{ top: 10, right: 60, bottom: 60, left: 70 }}
+            margin={{ top: 10, right: 60, bottom: 40, left: 70 }}
             xScale={{ type: 'point' }}
             yScale={{ type: 'linear', min: 0, max: 100 }}
             axisBottom={{
               tickSize: 0,
               tickPadding: 8,
               tickRotation: -30,
-              tickValues: 8,
+              tickValues,
+              format: axisBottomFormat,
             }}
             axisLeft={{
               tickSize: 0,
@@ -422,16 +524,19 @@ export default function HistoryChart({ from, to }: HistoryChartProps) {
             curve="monotoneX"
             lineWidth={2}
             useMesh={false}
-            layers={brushLayers}
+            layers={chartLayers}
             legends={[
               {
-                anchor: 'bottom-right',
-                direction: 'row',
-                translateY: 55,
-                itemWidth: 90,
-                itemHeight: 14,
+                anchor: 'top-right',
+                direction: 'column',
+                translateX: -5,
+                translateY: 5,
+                itemWidth: overlayMode ? 160 : 100,
+                itemHeight: 18,
                 symbolSize: 10,
                 symbolShape: 'circle',
+                onClick: (datum) => toggleId(datum.id as string),
+                data: socLegendData,
               },
             ]}
           />

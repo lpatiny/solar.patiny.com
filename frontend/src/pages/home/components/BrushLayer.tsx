@@ -3,8 +3,7 @@ import { useCallback, useState } from 'react';
 interface BrushLayerProps {
   innerWidth: number;
   innerHeight: number;
-  dataLength: number;
-  onZoom: (startIdx: number, endIdx: number) => void;
+  onZoom: (startFraction: number, endFraction: number) => void;
   onReset: () => void;
 }
 
@@ -16,7 +15,6 @@ interface Brush {
 export function BrushLayer({
   innerWidth,
   innerHeight,
-  dataLength,
   onZoom,
   onReset,
 }: BrushLayerProps) {
@@ -43,14 +41,14 @@ export function BrushLayer({
     const minX = Math.min(brush.start, brush.current);
     const maxX = Math.max(brush.start, brush.current);
     if (maxX - minX > 5) {
-      const startIdx = Math.round((minX / innerWidth) * (dataLength - 1));
-      const endIdx = Math.round((maxX / innerWidth) * (dataLength - 1));
-      if (endIdx > startIdx) {
-        onZoom(startIdx, endIdx);
+      const startFraction = minX / innerWidth;
+      const endFraction = maxX / innerWidth;
+      if (endFraction > startFraction) {
+        onZoom(startFraction, endFraction);
       }
     }
     setBrush(null);
-  }, [brush, innerWidth, dataLength, onZoom]);
+  }, [brush, innerWidth, onZoom]);
 
   const selX = brush ? Math.min(brush.start, brush.current) : 0;
   const selW = brush ? Math.abs(brush.current - brush.start) : 0;

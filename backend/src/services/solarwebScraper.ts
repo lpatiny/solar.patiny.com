@@ -396,16 +396,34 @@ export async function scrapeAllHistory(): Promise<{
     HISTORY_START ??
     new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86_400_000)
+    .toISOString()
+    .slice(0, 10);
 
-  const dates: string[] = [];
+  const allDates: string[] = [];
   let cursor = new Date(`${startDate}T12:00:00Z`);
   const end = new Date(`${today}T12:00:00Z`);
   while (cursor <= end) {
-    dates.push(cursor.toISOString().slice(0, 10));
+    allDates.push(cursor.toISOString().slice(0, 10));
     cursor = new Date(cursor.getTime() + 86_400_000);
   }
 
-  dbg(`Starting sync of ${dates.length} days from ${startDate} to ${today}`);
+  // Load existing slot counts and skip days that are already complete.
+  // 288 = 24h × 12 five-minute slots; DST days can be ±12, so 270 is the safe floor.
+  const COMPLETE_SLOTS = 270;
+  const fromTs = Math.floor(
+    new Date(`${startDate}T00:00:00Z`).getTime() / 1000,
+  );
+  const toTs = Math.floor(new Date(`${today}T23:59:59Z`).getTime() / 1000);
+  const existingCounts = db.getSolarwebDayCounts(fromTs, toTs);
+  const dates = allDates.filter(
+    (date) =>
+      date >= yesterday || (existingCounts.get(date) ?? 0) < COMPLETE_SLOTS,
+  );
+
+  dbg(
+    `Starting sync of ${dates.length}/${allDates.length} days from ${startDate} to ${today} (${allDates.length - dates.length} already complete)`,
+  );
 
   progress = {
     running: true,
@@ -413,7 +431,7 @@ export async function scrapeAllHistory(): Promise<{
     synced: 0,
     errors: 0,
     total: dates.length,
-    startDate,
+    startDate: `${startDate} (${allDates.length - dates.length} already complete)`,
   };
 
   /* eslint-disable no-await-in-loop -- sequential to avoid rate-limiting */

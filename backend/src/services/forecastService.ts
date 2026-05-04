@@ -12,6 +12,7 @@ import {
   weatherDescription,
 } from '../utils/weatherMask.ts';
 
+import { clearSkyGhi, totalPredictedPower } from './analysisService.ts';
 import type { MeteoReading } from './meteoStationService.ts';
 import { fetchStationReadings, filterReadings } from './meteoStationService.ts';
 
@@ -40,7 +41,12 @@ function getPanelConfig(): {
   const surfaceM2 = Number(db.getSetting('panel_surface_m2') ?? 46);
   const efficiencyPct = Number(db.getSetting('panel_efficiency_pct') ?? 21);
   const peakKw = (surfaceM2 * efficiencyPct) / 100;
-  return { surfaceM2, efficiencyPct, peakKw, scalingFactor: peakKw * PV_EFFICIENCY };
+  return {
+    surfaceM2,
+    efficiencyPct,
+    peakKw,
+    scalingFactor: peakKw * PV_EFFICIENCY,
+  };
 }
 const TYPICAL_CONSUMPTION_W = Number(process.env.TYPICAL_CONSUMPTION_W ?? 400);
 const NEIGHBOR_EXPORT_TARGET_W = Number(
@@ -95,36 +101,57 @@ export interface ForecastResult {
   meteoReadings: MeteoReading[];
 }
 
-function computeClearSkyKwh(slotStartTs: number, pvPeakKw: number): number {
+/**
+ * Clear-sky AC output (kWh) for one 3-hour slot, using POA transposition with
+ * Bird & Hulstrom clear-sky GHI, Erbs decomposition, and isotropic sky model.
+ * @param slotStartTs
+ * @param efficiencyFrac
+ */
+function computeClearSkyKwh(
+  slotStartTs: number,
+  efficiencyFrac: number,
+): number {
   const SAMPLES = 6;
   const sampleIntervalS = SLOT_DURATION_S / SAMPLES;
   let totalWh = 0;
   for (let i = 0; i < SAMPLES; i++) {
     const sampleTs = slotStartTs + (i + 0.5) * sampleIntervalS;
-    const pos = suncalc.getPosition(
-      new Date(sampleTs * 1000),
-      DENGES_LAT,
-      DENGES_LNG,
+    const date = new Date(sampleTs * 1000);
+    const pos = suncalc.getPosition(date, DENGES_LAT, DENGES_LNG);
+    const elevationDeg = (pos.altitude * 180) / Math.PI;
+    if (elevationDeg <= 0.5) continue;
+    const zenithDeg = 90 - elevationDeg;
+    // suncalc azimuth: from south, westward positive → convert to from north, CW
+    const solarAzimuthStdDeg = (pos.azimuth * 180) / Math.PI + 180;
+    const ghi = clearSkyGhi(zenithDeg, date);
+    const powerW = totalPredictedPower(
+      ghi,
+      zenithDeg,
+      solarAzimuthStdDeg,
+      efficiencyFrac * PV_EFFICIENCY,
+      date,
     );
-    const elevation = Math.max(0, pos.altitude);
-    const clearSkyW = pvPeakKw * 1000 * Math.sin(elevation) * PV_EFFICIENCY;
-    totalWh += (clearSkyW * sampleIntervalS) / 3600;
+    totalWh += (powerW * sampleIntervalS) / 3600;
   }
   return totalWh / 1000;
 }
 
+/**
+ * Average horizontal clear-sky GHI (W/m²) over a 3-hour slot (Bird & Hulstrom).
+ * @param slotStartTs
+ */
 function computeClearSkyIrradianceWm2(slotStartTs: number): number {
   const SAMPLES = 6;
   const sampleIntervalS = SLOT_DURATION_S / SAMPLES;
   let total = 0;
   for (let i = 0; i < SAMPLES; i++) {
     const sampleTs = slotStartTs + (i + 0.5) * sampleIntervalS;
-    const pos = suncalc.getPosition(
-      new Date(sampleTs * 1000),
-      DENGES_LAT,
-      DENGES_LNG,
-    );
-    total += 1000 * Math.max(0, Math.sin(pos.altitude));
+    const date = new Date(sampleTs * 1000);
+    const pos = suncalc.getPosition(date, DENGES_LAT, DENGES_LNG);
+    const elevationDeg = (pos.altitude * 180) / Math.PI;
+    if (elevationDeg <= 0) continue;
+    const zenithDeg = 90 - elevationDeg;
+    total += clearSkyGhi(zenithDeg, date);
   }
   return total / SAMPLES;
 }
@@ -171,6 +198,26 @@ export async function getForecast(
     todayEndTs,
   );
 
+  // Actual battery SOC from SolarWeb for today (used for past slots)
+  const socRows = db
+    .statement<{ timestamp: number; battery_soc_pct: number }>(
+      `SELECT timestamp, battery_soc_pct
+       FROM solarweb_readings
+       WHERE timestamp BETWEEN ? AND ? AND battery_soc_pct IS NOT NULL AND battery_soc_pct > 0
+       ORDER BY timestamp`,
+    )
+    .all(todayMidnightTs, nowTs);
+
+  // Last known SOC at or before `ts` from SolarWeb history
+  function socAtOrBefore(ts: number): number | null {
+    let result: number | null = null;
+    for (const r of socRows) {
+      if (r.timestamp > ts) break;
+      result = r.battery_soc_pct;
+    }
+    return result;
+  }
+
   // Weather proxy covers 24 h from the current 3 h block
   const firstProxySlotTs =
     Math.floor(nowTs / SLOT_DURATION_S) * SLOT_DURATION_S;
@@ -179,8 +226,7 @@ export async function getForecast(
     (TYPICAL_CONSUMPTION_W * SLOT_DURATION_S) / 3_600_000;
   const batteryMaxChargeKwh =
     (BATTERY_MAX_CHARGE_W * SLOT_DURATION_S) / 3_600_000;
-  const neighborTargetKwh =
-    (NEIGHBOR_EXPORT_TARGET_W * SLOT_DURATION_S) / 3_600_000;
+  const efficiencyFrac = panel.efficiencyPct / 100;
 
   let soc = currentSocPct;
   let totalDayPredictedKwh = 0;
@@ -189,7 +235,6 @@ export async function getForecast(
   const slots: ForecastSlot[] = Array.from({ length: 8 }, (_, i) => {
     const slotStartTs = todayMidnightTs + i * SLOT_DURATION_S;
     const slotEndTs = slotStartTs + SLOT_DURATION_S;
-    const slotMidTs = slotStartTs + SLOT_DURATION_S / 2;
     const isPast = slotEndTs <= nowTs;
 
     // Map this midnight-aligned slot to the weather proxy index
@@ -206,7 +251,7 @@ export async function getForecast(
     const cloudFactor = cloudFactorFromMask(mask);
     const clearSkyIrradianceWm2 = computeClearSkyIrradianceWm2(slotStartTs);
     const predictedProductionKwh =
-      computeClearSkyKwh(slotStartTs, panel.peakKw) * cloudFactor;
+      computeClearSkyKwh(slotStartTs, efficiencyFrac) * cloudFactor;
     const predictedIrradianceWm2 = clearSkyIrradianceWm2 * cloudFactor;
 
     totalDayPredictedKwh += predictedProductionKwh;
@@ -214,6 +259,32 @@ export async function getForecast(
       remainingPredictedKwh += predictedProductionKwh;
     }
 
+    // For past slots: show actual measured SOC from SolarWeb instead of simulating
+    if (isPast) {
+      const socAtStart = socAtOrBefore(slotStartTs) ?? soc;
+      const socAtEnd = socAtOrBefore(slotEndTs - 1) ?? socAtStart;
+      soc = socAtEnd;
+      return {
+        timestamp: slotStartTs,
+        endTimestamp: slotEndTs,
+        temperatureC: temperature,
+        precipitationMm: precipitation,
+        weatherMask: mask,
+        weatherDescription: weatherDescription(mask),
+        cloudFactor,
+        predictedProductionKwh,
+        typicalConsumptionKwh,
+        batteryChargeKwh: 0,
+        neighborExportKwh: 0,
+        batterySocStartPct: socAtStart,
+        batterySocEndPct: socAtEnd,
+        isPast: true,
+        clearSkyIrradianceWm2,
+        predictedIrradianceWm2,
+      };
+    }
+
+    // Future/current slot: simulate charging strategy
     const socAtStart = soc;
     const netAvailableKwh = Math.max(
       0,
@@ -227,11 +298,9 @@ export async function getForecast(
     let batteryChargeKwh = 0;
     let neighborExportKwh = 0;
 
-    if (netAvailableKwh > 0 && !isPast) {
-      const isMorning = slotMidTs < sunTimes.solarNoon;
-      const needsMorningCharge = soc < MORNING_MIN_SOC_PCT && isMorning;
-
-      if (needsMorningCharge) {
+    if (netAvailableKwh > 0) {
+      if (remainingCapacityKwh > 0) {
+        // "Cut the top": charge battery from any surplus, limiting grid injection
         batteryChargeKwh = Math.min(
           netAvailableKwh,
           batteryMaxChargeKwh,
@@ -239,25 +308,12 @@ export async function getForecast(
         );
         neighborExportKwh = Math.max(0, netAvailableKwh - batteryChargeKwh);
       } else {
-        neighborExportKwh = Math.min(netAvailableKwh, neighborTargetKwh);
-        const afterExportKwh = netAvailableKwh - neighborExportKwh;
-        batteryChargeKwh = Math.min(
-          afterExportKwh,
-          batteryMaxChargeKwh,
-          remainingCapacityKwh,
-        );
-        // surplus beyond battery capacity also goes to neighbors
-        neighborExportKwh += Math.max(0, afterExportKwh - batteryChargeKwh);
+        // Battery full: export all surplus
+        neighborExportKwh = netAvailableKwh;
       }
     }
 
-    // Only advance SOC for future slots
-    if (!isPast) {
-      soc = Math.min(
-        100,
-        soc + (batteryChargeKwh / BATTERY_CAPACITY_KWH) * 100,
-      );
-    }
+    soc = Math.min(100, soc + (batteryChargeKwh / BATTERY_CAPACITY_KWH) * 100);
 
     return {
       timestamp: slotStartTs,
@@ -273,7 +329,7 @@ export async function getForecast(
       neighborExportKwh,
       batterySocStartPct: socAtStart,
       batterySocEndPct: soc,
-      isPast,
+      isPast: false,
       clearSkyIrradianceWm2,
       predictedIrradianceWm2,
     };

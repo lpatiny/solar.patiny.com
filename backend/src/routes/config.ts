@@ -1,4 +1,4 @@
-/* eslint-disable camelcase -- TypeBox schema keys match JSON API snake_case */
+/* eslint-disable camelcase, @typescript-eslint/naming-convention -- TypeBox schema keys match JSON API snake_case */
 import { Type } from 'typebox';
 
 import { db } from '../db/Database.ts';
@@ -14,11 +14,21 @@ const ConfigResponse = Type.Object({
   poll_interval_ms: Type.Number(),
   panel_surface_m2: Type.Number(),
   panel_efficiency_pct: Type.Number(),
+  panel_performance_ratio: Type.Number(),
+  panel_temp_coeff_pct_per_c: Type.Number(),
 });
 
 const PanelSettingsBody = Type.Object({
   panel_surface_m2: Type.Optional(Type.Number({ minimum: 1 })),
-  panel_efficiency_pct: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })),
+  panel_efficiency_pct: Type.Optional(
+    Type.Number({ minimum: 1, maximum: 100 }),
+  ),
+  panel_performance_ratio: Type.Optional(
+    Type.Number({ minimum: 0.1, maximum: 1 }),
+  ),
+  panel_temp_coeff_pct_per_c: Type.Optional(
+    Type.Number({ minimum: 0, maximum: 1 }),
+  ),
 });
 
 /**
@@ -42,6 +52,12 @@ export default async function configRoutes(fastify: FastifyTyped) {
       const panelEfficiencyPct = Number(
         db.getSetting('panel_efficiency_pct') ?? 21,
       );
+      const panelPerformanceRatio = Number(
+        db.getSetting('panel_performance_ratio') ?? 0.85,
+      );
+      const panelTempCoeffPctPerC = Number(
+        db.getSetting('panel_temp_coeff_pct_per_c') ?? 0.4,
+      );
 
       return {
         fronius_host: froniusHost,
@@ -52,6 +68,8 @@ export default async function configRoutes(fastify: FastifyTyped) {
         poll_interval_ms: pollIntervalMs,
         panel_surface_m2: panelSurfaceM2,
         panel_efficiency_pct: panelEfficiencyPct,
+        panel_performance_ratio: panelPerformanceRatio,
+        panel_temp_coeff_pct_per_c: panelTempCoeffPctPerC,
       };
     },
   );
@@ -65,12 +83,29 @@ export default async function configRoutes(fastify: FastifyTyped) {
       },
     },
     async (request) => {
-      const { panel_surface_m2, panel_efficiency_pct } = request.body;
+      const {
+        panel_surface_m2,
+        panel_efficiency_pct,
+        panel_performance_ratio,
+        panel_temp_coeff_pct_per_c,
+      } = request.body;
       if (panel_surface_m2 !== undefined) {
         db.upsertSetting('panel_surface_m2', String(panel_surface_m2));
       }
       if (panel_efficiency_pct !== undefined) {
         db.upsertSetting('panel_efficiency_pct', String(panel_efficiency_pct));
+      }
+      if (panel_performance_ratio !== undefined) {
+        db.upsertSetting(
+          'panel_performance_ratio',
+          String(panel_performance_ratio),
+        );
+      }
+      if (panel_temp_coeff_pct_per_c !== undefined) {
+        db.upsertSetting(
+          'panel_temp_coeff_pct_per_c',
+          String(panel_temp_coeff_pct_per_c),
+        );
       }
 
       const froniusHost = process.env.FRONIUS_HOST ?? 'http://192.168.1.30';
@@ -91,6 +126,12 @@ export default async function configRoutes(fastify: FastifyTyped) {
         panel_surface_m2: Number(db.getSetting('panel_surface_m2') ?? 46),
         panel_efficiency_pct: Number(
           db.getSetting('panel_efficiency_pct') ?? 21,
+        ),
+        panel_performance_ratio: Number(
+          db.getSetting('panel_performance_ratio') ?? 0.85,
+        ),
+        panel_temp_coeff_pct_per_c: Number(
+          db.getSetting('panel_temp_coeff_pct_per_c') ?? 0.4,
         ),
       };
     },
