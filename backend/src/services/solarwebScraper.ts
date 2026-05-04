@@ -574,19 +574,11 @@ export async function scrapeAllHistory(): Promise<{
     cursor = new Date(cursor.getTime() + 86_400_000);
   }
 
-  // Load existing slot counts and skip days that are already complete.
-  // 288 = 24h × 12 five-minute slots. The DB query uses 'localtime' so counts
-  // match local calendar dates when TZ is set correctly. Threshold 240 (=20 h)
-  // is a safe fallback if TZ is UTC but the PV system is in a positive offset zone.
-  const COMPLETE_SLOTS = 240;
-  const fromTs = Math.floor(
-    new Date(`${startDate}T00:00:00Z`).getTime() / 1000,
-  );
-  const toTs = Math.floor(new Date(`${today}T23:59:59Z`).getTime() / 1000);
-  const existingCounts = db.getSolarwebDayCounts(fromTs, toTs);
+  // Skip days already recorded in solarweb_synced_dates (populated on successful
+  // syncDay calls). Always re-fetch yesterday and today — they may be incomplete.
+  const syncedDates = db.getSyncedDates(startDate, today);
   const dates = allDates.filter(
-    (date) =>
-      date >= yesterday || (existingCounts.get(date) ?? 0) < COMPLETE_SLOTS,
+    (date) => date >= yesterday || !syncedDates.has(date),
   );
 
   dbg(
@@ -612,6 +604,7 @@ export async function scrapeAllHistory(): Promise<{
     progress.currentDate = date;
     try {
       await syncDay(date);
+      db.markDateSynced(date);
       progress.synced++;
     } catch (error_) {
       progress.errors++;

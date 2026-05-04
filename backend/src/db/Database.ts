@@ -298,11 +298,24 @@ export class Database {
 
   public getSolarwebDayCounts(from: number, to: number): Map<string, number> {
     const rows = this.statement<{ day: string; cnt: number }>(
-      `SELECT date(timestamp, 'unixepoch', 'localtime') AS day, COUNT(*) AS cnt
+      `SELECT date(timestamp, 'unixepoch') AS day, COUNT(*) AS cnt
        FROM solarweb_readings WHERE timestamp BETWEEN ? AND ?
        GROUP BY day`,
     ).all(from, to);
     return new Map(rows.map((r) => [r.day, r.cnt]));
+  }
+
+  public getSyncedDates(from: string, to: string): Set<string> {
+    const rows = this.statement<{ date: string }>(
+      `SELECT date FROM solarweb_synced_dates WHERE date BETWEEN ? AND ?`,
+    ).all(from, to);
+    return new Set(rows.map((r) => r.date));
+  }
+
+  public markDateSynced(date: string): void {
+    this.statement(
+      `INSERT OR IGNORE INTO solarweb_synced_dates (date) VALUES (?)`,
+    ).run(date);
   }
 
   public getOldestTimestamp(): number | null {
@@ -395,6 +408,7 @@ export class Database {
     const tables = [
       'readings',
       'solarweb_readings',
+      'solarweb_synced_dates',
       'weather_readings',
       'settings',
     ];
