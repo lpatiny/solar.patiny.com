@@ -38,11 +38,18 @@ export default async function solarwebRoutes(fastify: FastifyTyped) {
             errors: Type.Number(),
             startDate: Type.String(),
           }),
+          500: Type.Object({ error: Type.String() }),
         },
       },
     },
-    async () => {
-      return scrapeAllHistory();
+    async (_, reply) => {
+      try {
+        return await scrapeAllHistory();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fastify.log.error({ err: error }, 'scrapeAllHistory failed');
+        return reply.code(500).send({ error: message });
+      }
     },
   );
 

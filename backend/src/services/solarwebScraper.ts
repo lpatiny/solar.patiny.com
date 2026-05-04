@@ -506,6 +506,9 @@ export async function scrapeAllHistory(): Promise<{
   errors: number;
   startDate: string;
 }> {
+  process.stderr.write(
+    `[solarweb] scrapeAllHistory: PV_SYSTEM_ID=${PV_SYSTEM_ID ? 'set' : 'MISSING'} USERNAME=${USERNAME ? 'set' : 'MISSING'} PASSWORD=${PASSWORD ? 'set' : 'MISSING'} HISTORY_START=${HISTORY_START ?? '(none)'}\n`,
+  );
   if (!PV_SYSTEM_ID || !USERNAME || !PASSWORD) {
     return { synced: 0, errors: 0, startDate: '' };
   }
@@ -566,7 +569,9 @@ export async function scrapeAllHistory(): Promise<{
       if (!sessionJar) {
         // getSessionJar() already attempted login and failed (CAPTCHA / bad credentials).
         // Do not retry — each failed attempt risks triggering another CAPTCHA challenge.
-        dbg('Aborting history sync: login failed (CAPTCHA or credentials issue)');
+        dbg(
+          'Aborting history sync: login failed (CAPTCHA or credentials issue)',
+        );
         process.stderr.write(
           '[solarweb] History sync aborted: login failed. CAPTCHA or credential issue — will retry on next scheduled sync.\n',
         );

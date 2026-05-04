@@ -198,7 +198,16 @@ export default function ConfigCard({
       const res = await fetch('/api/solarweb/scrape-history', {
         method: 'POST',
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body.error) detail = `${detail}: ${body.error}`;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(detail);
+      }
       setSyncResult((await res.json()) as SyncResult);
     } catch (error_) {
       setSyncError(error_ instanceof Error ? error_.message : 'Sync failed');
