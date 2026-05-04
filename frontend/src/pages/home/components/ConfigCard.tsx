@@ -1,4 +1,4 @@
-import { Button, Intent, NumericInput, Tag } from '@blueprintjs/core';
+import { Button, Intent, NumericInput, Tag, TextArea } from '@blueprintjs/core';
 import { useEffect, useRef, useState } from 'react';
 
 import type { ConfigData } from '../HomePage.tsx';
@@ -14,6 +14,13 @@ interface SyncResult {
   synced: number;
   errors: number;
   startDate: string;
+}
+
+interface SessionStatus {
+  hasSession: boolean;
+  cookieKeys: string[];
+  lastError: string | null;
+  savedAt: string | null;
 }
 
 interface SyncProgress {
@@ -80,6 +87,14 @@ export default function ConfigCard({
   modbusStatus,
   modbusError,
 }: ConfigCardProps) {
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(
+    null,
+  );
+  const [showLoginHelper, setShowLoginHelper] = useState(false);
+  const [cookiePaste, setCookiePaste] = useState('');
+  const [importingSession, setImportingSession] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [panelSurface, setPanelSurface] = useState(config.panel_surface_m2);
   const [panelEfficiency, setPanelEfficiency] = useState(
@@ -103,10 +118,41 @@ export default function ConfigCard({
   const [weatherSyncError, setWeatherSyncError] = useState<string | null>(null);
 
   useEffect(() => {
+    void fetch('/api/solarweb/session')
+      .then((r) => r.json())
+      .then((s) => setSessionStatus(s as SessionStatus))
+      .catch(() => null);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  async function handleImportSession() {
+    setImportingSession(true);
+    setImportError(null);
+    setImportSuccess(false);
+    try {
+      const res = await fetch('/api/solarweb/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cookies: cookiePaste }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok)
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      setImportSuccess(true);
+      setCookiePaste('');
+      setShowLoginHelper(false);
+      const s = await fetch('/api/solarweb/session').then((r) => r.json());
+      setSessionStatus(s as SessionStatus);
+    } catch (error_) {
+      setImportError(
+        error_ instanceof Error ? error_.message : 'Import failed',
+      );
+    } finally {
+      setImportingSession(false);
+    }
+  }
 
   async function handleSavePanelSettings() {
     setSavingPanel(true);
@@ -396,6 +442,145 @@ export default function ConfigCard({
           <span style={{ fontSize: 11, color: '#fca5a5' }}>{syncError}</span>
         )}
       </div>
+
+      <SectionTitle title="SolarWeb Login" />
+      <Row label="Session">
+        {sessionStatus === null ? (
+          <Tag minimal>Loading…</Tag>
+        ) : sessionStatus.hasSession ? (
+          <Tag intent={Intent.SUCCESS} minimal>
+            Active
+          </Tag>
+        ) : (
+          <Tag intent={Intent.DANGER} minimal>
+            {sessionStatus.lastError ? 'CAPTCHA blocked' : 'No session'}
+          </Tag>
+        )}
+      </Row>
+      {sessionStatus?.savedAt && (
+        <Row
+          label="Saved"
+          value={new Date(sessionStatus.savedAt).toLocaleString()}
+        />
+      )}
+      {sessionStatus?.lastError && (
+        <div
+          style={{
+            color: '#fca5a5',
+            fontSize: 11,
+            marginTop: 4,
+            wordBreak: 'break-all',
+          }}
+        >
+          {sessionStatus.lastError}
+        </div>
+      )}
+      <div style={{ marginTop: 8 }}>
+        <Button
+          size="small"
+          intent={
+            sessionStatus && !sessionStatus.hasSession
+              ? Intent.WARNING
+              : Intent.NONE
+          }
+          onClick={() => setShowLoginHelper((v) => !v)}
+        >
+          {showLoginHelper ? 'Hide' : 'Fix Login'}
+        </Button>
+        {importSuccess && !showLoginHelper && (
+          <span style={{ fontSize: 11, color: '#86efac', marginLeft: 10 }}>
+            Session imported successfully
+          </span>
+        )}
+      </div>
+      {showLoginHelper && (
+        <div
+          style={{
+            background: 'var(--card-bg, #1a1a2e)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            marginTop: 10,
+            padding: 12,
+            fontSize: 12,
+          }}
+        >
+          <div style={{ marginBottom: 10, color: 'var(--text-secondary)' }}>
+            Log in manually to SolarWeb and paste your session cookies here.
+          </div>
+
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+            Step 1 — Log in to SolarWeb
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <a
+              href="https://www.solarweb.com"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: '#60a5fa' }}
+            >
+              Open solarweb.com ↗
+            </a>{' '}
+            and complete login (solve any CAPTCHA if prompted).
+          </div>
+
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+            Step 2 — Copy your cookies
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            On the SolarWeb tab, open the browser console (F12 → Console) and
+            run:
+          </div>
+          <div
+            style={{
+              background: '#0f172a',
+              borderRadius: 4,
+              fontFamily: 'monospace',
+              fontSize: 11,
+              marginBottom: 6,
+              padding: '6px 10px',
+            }}
+          >
+            copy(document.cookie)
+          </div>
+          <Button
+            size="small"
+            style={{ marginBottom: 10 }}
+            onClick={() => {
+              void navigator.clipboard.writeText('copy(document.cookie)');
+            }}
+          >
+            Copy script ⧉
+          </Button>
+
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+            Step 3 — Paste and import
+          </div>
+          <TextArea
+            value={cookiePaste}
+            onChange={(e) => setCookiePaste(e.target.value)}
+            placeholder="Paste cookie string here…"
+            fill
+            rows={3}
+            style={{ fontFamily: 'monospace', fontSize: 11, marginBottom: 8 }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Button
+              intent={Intent.PRIMARY}
+              size="small"
+              loading={importingSession}
+              disabled={!cookiePaste.trim()}
+              onClick={() => void handleImportSession()}
+            >
+              Import Session
+            </Button>
+            {importError && (
+              <span style={{ fontSize: 11, color: '#fca5a5' }}>
+                {importError}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       <SectionTitle title="MeteoSwiss Weather" />
       <Row label="Stations" value="PRE (Saint-Prex) / PUY (Pully)" />

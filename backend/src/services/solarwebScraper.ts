@@ -1,4 +1,13 @@
 /* eslint-disable camelcase -- API response fields use snake_case */
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join } from 'node:path';
+
 import { db } from '../db/Database.ts';
 import type { SolarwebReadingRow } from '../db/rows.ts';
 
@@ -38,6 +47,14 @@ function dbg(msg: string) {
   if (DEBUG) process.stderr.write(`[solarweb] ${msg}\n`);
 }
 
+const SESSION_PATH = join(
+  import.meta.dirname,
+  '../../../data/solarweb-session.json',
+);
+
+const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
 // ─── Cookie jar ───────────────────────────────────────────────────────────────
 
 type CookieJar = Map<string, string>;
@@ -69,12 +86,95 @@ function cookieHeader(jar: CookieJar): string {
 
 // Cache the session cookie so we don't log in on every request
 let sessionJar: CookieJar | null = null;
+let lastLoginError: string | null = null;
+
+export interface SessionStatus {
+  hasSession: boolean;
+  cookieKeys: string[];
+  lastError: string | null;
+  savedAt: string | null;
+}
+
+/** Returns the current SolarWeb session status without triggering a login. */
+export function getSessionStatus(): SessionStatus {
+  const jar = sessionJar ?? loadSession();
+  const hasSession =
+    jar !== null && (jar.has('.ASPXAUTH') || jar.has('.AspNet.Auth'));
+
+  let savedAt: string | null = null;
+  try {
+    if (existsSync(SESSION_PATH)) {
+      savedAt = statSync(SESSION_PATH).mtime.toISOString();
+    }
+  } catch {
+    /* non-critical */
+  }
+
+  return {
+    hasSession,
+    cookieKeys: jar ? [...jar.keys()] : [],
+    lastError: lastLoginError,
+    savedAt,
+  };
+}
+
+/**
+ * Import a SolarWeb session from a raw `document.cookie` string pasted by the
+ * user after manually logging in to solarweb.com in their browser.
+ * Throws if the required session cookie is not present.
+ * @param rawCookieHeader
+ */
+export function importSession(rawCookieHeader: string): void {
+  const jar: CookieJar = new Map();
+  for (const part of rawCookieHeader.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const key = part.slice(0, eq).trim();
+    const val = part.slice(eq + 1).trim();
+    if (key) jar.set(key, val);
+  }
+  if (!jar.has('.ASPXAUTH') && !jar.has('.AspNet.Auth')) {
+    throw new Error(
+      `No SolarWeb session cookie found in pasted string. Got: ${[...jar.keys()].join(', ')}`,
+    );
+  }
+  sessionJar = jar;
+  lastLoginError = null;
+  saveSession(jar);
+}
+
+function saveSession(jar: CookieJar): void {
+  try {
+    mkdirSync(dirname(SESSION_PATH), { recursive: true });
+    writeFileSync(
+      SESSION_PATH,
+      JSON.stringify(Object.fromEntries(jar)),
+      'utf8',
+    );
+  } catch {
+    // non-critical — in-memory session is still usable
+  }
+}
+
+function loadSession(): CookieJar | null {
+  try {
+    if (!existsSync(SESSION_PATH)) return null;
+    const raw = JSON.parse(readFileSync(SESSION_PATH, 'utf8')) as Record<
+      string,
+      string
+    >;
+    return new Map(Object.entries(raw));
+  } catch {
+    return null;
+  }
+}
 
 async function fetchWithCookies(
   url: string,
   options: RequestInit & { jar: CookieJar },
 ): Promise<{ res: Response; jar: CookieJar }> {
   const headers = new Headers(options.headers);
+  headers.set('User-Agent', USER_AGENT);
   if (options.jar.size > 0) headers.set('Cookie', cookieHeader(options.jar));
 
   const res = await fetch(url, {
@@ -254,14 +354,26 @@ async function login(): Promise<CookieJar> {
   dbg(`Login complete. Cookie keys: ${[...jar.keys()].join(', ')}`);
   // SolarWeb uses .AspNet.Auth (ASP.NET Core); older deployments used .ASPXAUTH
   if (!jar.has('.ASPXAUTH') && !jar.has('.AspNet.Auth')) {
+    lastLoginError =
+      'CAPTCHA / Human Verification blocked login — solarweb.com session not established';
     throw new Error(
       `Login succeeded but no session cookie — solarweb.com session not established. Got: ${[...jar.keys()].join(', ')}`,
     );
   }
+  lastLoginError = null;
+  saveSession(jar);
   return jar;
 }
 
 async function getSessionJar(): Promise<CookieJar> {
+  if (!sessionJar) {
+    sessionJar = loadSession();
+    dbg(
+      sessionJar
+        ? 'Loaded session from disk'
+        : 'No cached session on disk — logging in',
+    );
+  }
   // eslint-disable-next-line require-atomic-updates
   if (!sessionJar) sessionJar = await login();
   return sessionJar;
@@ -297,6 +409,7 @@ async function fetchProductionChart(
       Cookie: cookieHeader(jar),
       Pragma: 'no-cache',
       Referer: `https://www.solarweb.com/Chart/Chart?pvSystemId=${PV_SYSTEM_ID}`,
+      'User-Agent': USER_AGENT,
       'X-Requested-With': 'XMLHttpRequest',
     },
     redirect: 'manual',
@@ -304,6 +417,11 @@ async function fetchProductionChart(
 
   if (res.status === 401 || res.status === 302) {
     sessionJar = null;
+    try {
+      if (existsSync(SESSION_PATH)) writeFileSync(SESSION_PATH, '', 'utf8');
+    } catch {
+      /* non-critical */
+    }
     dbg(`Session expired (${res.status}) for ${year}-${month}-${day}`);
     throw new Error('Session expired');
   }
@@ -434,20 +552,37 @@ export async function scrapeAllHistory(): Promise<{
     startDate: `${startDate} (${allDates.length - dates.length} already complete)`,
   };
 
+  const MAX_CONSECUTIVE_LOGIN_FAILURES = 3;
+  let consecutiveLoginFailures = 0;
+
   /* eslint-disable no-await-in-loop -- sequential to avoid rate-limiting */
   for (const date of dates) {
     progress.currentDate = date;
     try {
       await syncDay(date);
       progress.synced++;
+      consecutiveLoginFailures = 0;
     } catch (error_) {
       progress.errors++;
       dbg(
         `Error on ${date}: ${error_ instanceof Error ? error_.message : String(error_)}`,
       );
-      // Re-establish session immediately so the next day can proceed
-      // eslint-disable-next-line require-atomic-updates
-      if (!sessionJar) sessionJar = await login().catch(() => null);
+      if (!sessionJar) {
+        // eslint-disable-next-line require-atomic-updates
+        sessionJar = await login().catch(() => null);
+        if (!sessionJar) {
+          consecutiveLoginFailures++;
+          if (consecutiveLoginFailures >= MAX_CONSECUTIVE_LOGIN_FAILURES) {
+            dbg(
+              `Aborting history sync after ${consecutiveLoginFailures} consecutive login failures (CAPTCHA or credentials issue)`,
+            );
+            process.stderr.write(
+              `[solarweb] History sync aborted: login failed ${consecutiveLoginFailures} times in a row. CAPTCHA or credential issue — will retry on next scheduled sync.\n`,
+            );
+            break;
+          }
+        }
+      }
     }
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 500);

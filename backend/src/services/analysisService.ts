@@ -67,6 +67,13 @@ function extraterrestrialCorrection(date: Date): number {
   return 1 + 0.033 * Math.cos((2 * Math.PI * dayOfYear) / 365);
 }
 
+// Broadband atmospheric transmittance for Bird & Hulstrom (1981).
+// The original paper uses 0.7 for "average" turbidity (Linke TL ≈ 3.5–4.0).
+// For the Swiss plateau with clean Alpine air, TL is typically 2.0–2.5,
+// which corresponds to a transmittance of ~0.80 and matches the empirical
+// clear-sky production maxima recorded by the system.
+const BIRD_TRANSMITTANCE = 0.8;
+
 /**
  * Bird & Hulstrom (1981) simplified clear-sky GHI model.
  * Returns W/m² on a horizontal surface.
@@ -78,7 +85,7 @@ export function clearSkyGhi(zenithDeg: number, date: Date): number {
   const am = airMass(zenithDeg);
   const cosZ = Math.cos((zenithDeg * Math.PI) / 180);
   const e0 = extraterrestrialCorrection(date);
-  return SOLAR_CONSTANT * e0 * cosZ * 0.7 ** (am ** 0.678);
+  return SOLAR_CONSTANT * e0 * cosZ * BIRD_TRANSMITTANCE ** (am ** 0.678);
 }
 
 /**
