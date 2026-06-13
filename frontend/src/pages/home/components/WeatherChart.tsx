@@ -8,6 +8,7 @@ interface WeatherPoint {
   timestamp: number;
   station: string;
   global_radiation_w: number | null;
+  global_radiation_w_max?: number | null;
   temperature_c: number | null;
   humidity_pct: number | null;
   precipitation_mm: number | null;
@@ -23,10 +24,16 @@ function deriveResolution(from: number, to: number): WeatherResolution {
 function formatTs(ts: number, resolution: WeatherResolution): string {
   const d = new Date(ts * 1000);
   if (resolution === 'daily') {
-    const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const date = d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
     return `${date}|${d.getFullYear()}`;
   }
-  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const date = d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
   const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return `${date}|${time}`;
 }
@@ -242,16 +249,32 @@ export default function WeatherChart({
     [visibleData, resolution],
   );
 
-  const radData = useMemo(
+  const radAvgData = useMemo(
     () => [
       {
-        id: 'Solar radiation (W/m²)',
+        id: 'Avg solar radiation (W/m²)',
         color: '#fbbf24',
         data: visibleData
           .filter((p) => p.global_radiation_w !== null)
           .map((p) => ({
             x: formatTs(p.timestamp, resolution),
             y: Math.round(p.global_radiation_w as number),
+          })),
+      },
+    ],
+    [visibleData, resolution],
+  );
+
+  const radMaxData = useMemo(
+    () => [
+      {
+        id: 'Peak solar radiation (W/m²)',
+        color: '#f97316',
+        data: visibleData
+          .filter((p) => p.global_radiation_w_max != null)
+          .map((p) => ({
+            x: formatTs(p.timestamp, resolution),
+            y: Math.round(p.global_radiation_w_max as number),
           })),
       },
     ],
@@ -333,7 +356,7 @@ export default function WeatherChart({
           <div style={{ height: 180, marginTop: 24 }}>
             <ResponsiveLine
               {...sharedLineProps}
-              data={radData}
+              data={radAvgData}
               colors={({ color }) => color}
               enableArea
               areaOpacity={0.15}
@@ -348,6 +371,27 @@ export default function WeatherChart({
               layers={brushLayers}
             />
           </div>
+
+          {radMaxData[0]!.data.length > 0 && (
+            <div style={{ height: 180, marginTop: 24 }}>
+              <ResponsiveLine
+                {...sharedLineProps}
+                data={radMaxData}
+                colors={({ color }) => color}
+                enableArea
+                areaOpacity={0.15}
+                axisBottom={axisBottom}
+                axisLeft={{
+                  tickSize: 0,
+                  tickPadding: 8,
+                  format: (v: number) => `${Math.round(v)} W/m²`,
+                  tickValues: 5,
+                }}
+                legends={legends}
+                layers={brushLayers}
+              />
+            </div>
+          )}
         </>
       )}
     </div>

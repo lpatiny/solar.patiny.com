@@ -189,8 +189,8 @@ export default function ElectricalCard({ realtime }: ElectricalCardProps) {
           {/* ── Left column ── */}
           <div>
             <SectionHeader title="PV Strings" />
-            <PvStringRow label="String 1" powerW={pv1} maxW={totalPv} />
-            <PvStringRow label="String 2" powerW={pv2} maxW={totalPv} />
+            <PvStringRow label="String 1" powerW={pv1} maxW={6720} />
+            <PvStringRow label="String 2" powerW={pv2} maxW={2940} />
             <div
               style={{
                 fontSize: 12,

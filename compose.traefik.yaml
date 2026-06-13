@@ -2,8 +2,16 @@
 # Requires a Traefik instance on an external Docker network named "traefik"
 # with a "websecure" entrypoint and a "letsencrypt" cert resolver.
 #
-# Copy this file to compose.yaml and adjust the Host label to your hostname,
-# then run: docker compose up -d
+# LIMITATION: Traefik routes by container name on a shared bridge network, which
+# is incompatible with network_mode: host. So this mode keeps bridge networking,
+# and the Marstek battery poller's UDP-broadcast discovery / DHCP self-heal does
+# NOT work here (broadcast can't cross the bridge). Give each battery a static
+# DHCP reservation and set its host explicitly; unicast polling then works.
+# For full discovery/self-heal use compose.yaml or compose.cloudflared.yaml
+# (both host-networked).
+#
+# Select this file via COMPOSE_FILE in .env, adjust the Host label to your
+# hostname, then run: docker compose up -d
 
 services:
   solar-monitoring:

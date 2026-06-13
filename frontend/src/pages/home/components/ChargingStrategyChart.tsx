@@ -338,9 +338,7 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
   const futureSocPts = points
     .filter((p) => !p.isPast)
     .map((p) => ({ x: p.xMs, y: Math.round(p.socPct) }));
-  const socForecastPts = bridgePt
-    ? [bridgePt, ...futureSocPts]
-    : futureSocPts;
+  const socForecastPts = bridgePt ? [bridgePt, ...futureSocPts] : futureSocPts;
 
   const socLines = [
     { id: 'soc_actual', color: '#22d3ee', data: socActualPts },

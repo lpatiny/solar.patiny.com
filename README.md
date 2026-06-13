@@ -27,10 +27,19 @@ cp .env.example .env
 
 ## Deployment
 
-### Standard (port published on host)
+Select a deployment mode by uncommenting one `COMPOSE_FILE=` line in `.env`
+(see `.env.example`); with none set, `compose.yaml` is used. `compose.yaml` and
+`compose.cloudflared.yaml` run host-networked so the Marstek battery poller's
+UDP-broadcast discovery and DHCP self-heal work — broadcast cannot cross a Docker
+bridge network. `compose.traefik.yaml` stays on a bridge (Traefik routes by
+container name) and therefore cannot discover/self-heal batteries: pin each
+battery to a static DHCP reservation and set its host explicitly.
+
+### Standard (host-networked, binds `PORT` on the host)
+
+Leave `COMPOSE_FILE` unset, or set `COMPOSE_FILE=compose.yaml`:
 
 ```sh
-cp compose.example.yaml compose.yaml
 docker compose pull && docker compose up -d
 ```
 
@@ -44,20 +53,20 @@ docker compose up -d --build
 
 1. Go to [Cloudflare dashboard](https://dash.cloudflare.com) → Networking → Tunnels → Create a tunnel → Cloudflared connector.
 2. Copy the tunnel token and add it to `.env` as `TUNNEL_TOKEN=...`.
-3. After starting the tunnel, go to Published applications tab → add application with Service `HTTP`, URL `solar-monitoring:3000`, hostname `solar-monitoring.lactame.com` (or your chosen domain).
+3. After starting the tunnel, go to Published applications tab → add application with Service `HTTP`, URL `http://localhost:3000` (the cloudflared sidecar is host-networked), hostname `solar-monitoring.lactame.com` (or your chosen domain).
 
 ```sh
-cp compose.example.cloudflared.yaml compose.yaml
+# in .env: COMPOSE_FILE=compose.cloudflared.yaml
 docker compose up -d
 ```
 
 ### Traefik reverse proxy (public HTTPS via existing Traefik)
 
-Requires an existing Traefik instance on an external Docker network named `traefik` with a `websecure` entrypoint and a `letsencrypt` cert resolver. Adjust the `Host(...)` label in `compose.yaml` to your chosen hostname.
+Requires an existing Traefik instance on an external Docker network named `traefik` with a `websecure` entrypoint and a `letsencrypt` cert resolver. Adjust the `Host(...)` label in `compose.traefik.yaml` to your chosen hostname. Battery discovery/self-heal is unavailable in this mode (bridge networking — see above).
 
 ```sh
-cp compose.example.traefik.yaml compose.yaml
-# Edit compose.yaml and set your hostname in the traefik label
+# in .env: COMPOSE_FILE=compose.traefik.yaml
+# Edit compose.traefik.yaml and set your hostname in the traefik label
 docker compose up -d
 ```
 

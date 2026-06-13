@@ -1,3 +1,10 @@
+# Default deployment — the app shares the host network stack.
+#
+# host networking is REQUIRED: the Marstek battery poller discovers devices and
+# self-heals their (DHCP) IP via UDP broadcast (255.255.255.255 / x.x.x.255),
+# which never crosses a Docker bridge network. Under host networking the
+# container binds PORT directly on the host, so no `ports:` mapping is needed
+# (it would be ignored anyway).
 services:
   solar-monitoring:
     # Use the released image by default. To build locally instead, run:
@@ -5,8 +12,7 @@ services:
     image: ghcr.io/cheminfo/solar-monitoring:latest
     build: .
     env_file: .env
-    ports:
-      - '${PORT:-3000}:${PORT:-3000}'
+    network_mode: host
     volumes:
       - ./data:/app/data
     init: true

@@ -1,4 +1,4 @@
-/* eslint-disable camelcase -- DB fields use snake_case */
+/* eslint-disable camelcase, @typescript-eslint/naming-convention -- DB fields use snake_case */
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,13 +9,28 @@ import type { MeteoReading } from '../services/meteoStationService.ts';
 
 import { TypedStatementSync } from './TypedStatementSync.ts';
 import type {
+  AggregatedBatteryRow,
   AggregatedReadingRow,
   AggregatedSolarwebRow,
   AggregatedWeatherRow,
+  BatteryReadingInput,
+  BatteryReadingRow,
+  DeviceRow,
   ReadingRow,
   SolarwebReadingRow,
   WeatherReadingRow,
 } from './rows.ts';
+
+/** Fields needed to create or update a device (no id / created_at). */
+export interface DeviceInput {
+  name: string;
+  type: string;
+  host: string;
+  port: number;
+  ble_mac: string | null;
+  enabled: boolean;
+  poll_interval_ms: number;
+}
 
 export class Database {
   readonly #slowQueryLog: string;
@@ -368,6 +383,7 @@ export class Database {
          (timestamp / 3600) * 3600 AS timestamp,
          station,
          AVG(global_radiation_w) AS global_radiation_w,
+         MAX(global_radiation_w) AS global_radiation_w_max,
          AVG(temperature_c) AS temperature_c,
          AVG(humidity_pct) AS humidity_pct,
          SUM(precipitation_mm) AS precipitation_mm,
@@ -385,6 +401,7 @@ export class Database {
          (timestamp / 86400) * 86400 + 43200 AS timestamp,
          station,
          AVG(global_radiation_w) AS global_radiation_w,
+         MAX(global_radiation_w) AS global_radiation_w_max,
          AVG(temperature_c) AS temperature_c,
          AVG(humidity_pct) AS humidity_pct,
          SUM(precipitation_mm) AS precipitation_mm,
@@ -434,6 +451,158 @@ export class Database {
       `INSERT INTO settings (key, value) VALUES (?, ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     ).run(key, value);
+  }
+
+  public listDevices(): DeviceRow[] {
+    return this.statement<DeviceRow>('SELECT * FROM devices ORDER BY id').all();
+  }
+
+  public getDevice(id: number): DeviceRow | null {
+    return (
+      this.statement<DeviceRow>('SELECT * FROM devices WHERE id = ?').get(id) ??
+      null
+    );
+  }
+
+  public insertDevice(input: DeviceInput): DeviceRow {
+    const created_at = Math.floor(Date.now() / 1000);
+    const result = this.statement(
+      `INSERT INTO devices (name, type, host, port, ble_mac, enabled, poll_interval_ms, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      input.name,
+      input.type,
+      input.host,
+      input.port,
+      input.ble_mac,
+      input.enabled ? 1 : 0,
+      input.poll_interval_ms,
+      created_at,
+    );
+    const created = this.getDevice(Number(result.lastInsertRowid));
+    if (!created) throw new Error('failed to read back inserted device');
+    return created;
+  }
+
+  public updateDevice(id: number, input: DeviceInput): DeviceRow | null {
+    this.statement(
+      `UPDATE devices SET name = ?, type = ?, host = ?, port = ?, ble_mac = ?,
+         enabled = ?, poll_interval_ms = ? WHERE id = ?`,
+    ).run(
+      input.name,
+      input.type,
+      input.host,
+      input.port,
+      input.ble_mac,
+      input.enabled ? 1 : 0,
+      input.poll_interval_ms,
+      id,
+    );
+    return this.getDevice(id);
+  }
+
+  public deleteDevice(id: number): void {
+    // No ON DELETE CASCADE (foreign_keys pragma is off), so remove the
+    // device's readings first to avoid orphaned rows.
+    this.#sqlite.exec('BEGIN');
+    try {
+      this.statement('DELETE FROM battery_readings WHERE device_id = ?').run(
+        id,
+      );
+      this.statement('DELETE FROM devices WHERE id = ?').run(id);
+      this.#sqlite.exec('COMMIT');
+    } catch (error) {
+      this.#sqlite.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  public insertBatteryReading(row: BatteryReadingInput): void {
+    this.statement(
+      `INSERT INTO battery_readings (
+         device_id, timestamp, soc_pct, voltage_v, current_a, power_w, ac_power_w,
+         energy_kwh, internal_temp_c, mos_temp_c, inverter_state,
+         total_charge_kwh, total_discharge_kwh, daily_charge_kwh, daily_discharge_kwh
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      row.device_id,
+      row.timestamp,
+      row.soc_pct,
+      row.voltage_v,
+      row.current_a,
+      row.power_w,
+      row.ac_power_w,
+      row.energy_kwh,
+      row.internal_temp_c,
+      row.mos_temp_c,
+      row.inverter_state,
+      row.total_charge_kwh,
+      row.total_discharge_kwh,
+      row.daily_charge_kwh,
+      row.daily_discharge_kwh,
+    );
+  }
+
+  public getLatestBatteryReading(deviceId: number): BatteryReadingRow | null {
+    return (
+      this.statement<BatteryReadingRow>(
+        `SELECT * FROM battery_readings WHERE device_id = ?
+         ORDER BY timestamp DESC LIMIT 1`,
+      ).get(deviceId) ?? null
+    );
+  }
+
+  public queryBatteryReadingsRaw(
+    deviceId: number,
+    from: number,
+    to: number,
+  ): BatteryReadingRow[] {
+    return this.statement<BatteryReadingRow>(
+      `SELECT * FROM battery_readings
+       WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+       ORDER BY timestamp`,
+    ).all(deviceId, from, to);
+  }
+
+  public queryBatteryReadingsHourly(
+    deviceId: number,
+    from: number,
+    to: number,
+  ): AggregatedBatteryRow[] {
+    return this.#queryBatteryAggregated(3600, deviceId, from, to);
+  }
+
+  public queryBatteryReadingsDaily(
+    deviceId: number,
+    from: number,
+    to: number,
+  ): AggregatedBatteryRow[] {
+    return this.#queryBatteryAggregated(86_400, deviceId, from, to);
+  }
+
+  #queryBatteryAggregated(
+    seconds: number,
+    deviceId: number,
+    from: number,
+    to: number,
+  ): AggregatedBatteryRow[] {
+    // `seconds` is an internal constant (3600 / 86400) and must be an integer
+    // literal in the SQL — a bound parameter binds as a float and breaks the
+    // integer division used for bucketing.
+    return this.statement<AggregatedBatteryRow>(
+      `SELECT
+         (timestamp / ${seconds}) * ${seconds} AS bucket,
+         AVG(soc_pct) AS soc_pct,
+         AVG(power_w) AS power_w,
+         AVG(ac_power_w) AS ac_power_w,
+         AVG(energy_kwh) AS energy_kwh,
+         MAX(total_charge_kwh) AS total_charge_kwh,
+         MAX(total_discharge_kwh) AS total_discharge_kwh
+       FROM battery_readings
+       WHERE device_id = ? AND timestamp BETWEEN ? AND ?
+       GROUP BY bucket
+       ORDER BY bucket`,
+    ).all(deviceId, from, to);
   }
 }
 

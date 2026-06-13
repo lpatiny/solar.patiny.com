@@ -222,8 +222,7 @@ const metricStyle: React.CSSProperties = {
 };
 
 const prBadge = (pr: number): React.CSSProperties => ({
-  background:
-    pr >= 0.75 ? '#14532d' : pr >= 0.6 ? '#713f12' : '#450a0a',
+  background: pr >= 0.75 ? '#14532d' : pr >= 0.6 ? '#713f12' : '#450a0a',
   borderRadius: 4,
   color: pr >= 0.75 ? '#4ade80' : pr >= 0.6 ? '#fde047' : '#f87171',
   display: 'inline-block',
@@ -245,8 +244,18 @@ async function apiFetch<T>(url: string): Promise<T> {
 type ViewMode = 'year' | 'month';
 
 const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 function periodRange(
@@ -306,7 +315,9 @@ function SummaryMetrics({
   }, [monthly]);
 
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+    <div
+      style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}
+    >
       <div style={metricStyle}>
         <div style={{ color: '#4ade80', fontSize: 22, fontWeight: 700 }}>
           {totalActual.toFixed(0)}
@@ -321,15 +332,19 @@ function SummaryMetrics({
       </div>
       <div style={metricStyle}>
         <div style={{ color: '#f59e0b', fontSize: 22, fontWeight: 700 }}>
-          {medianPR !== null ? (medianPR * 100).toFixed(0) + '%' : '—'}
+          {medianPR !== null ? `${(medianPR * 100).toFixed(0)}%` : '—'}
         </div>
-        <div style={{ color: '#64748b', fontSize: 11 }}>median correction factor</div>
+        <div style={{ color: '#64748b', fontSize: 11 }}>
+          median correction factor
+        </div>
       </div>
       <div style={metricStyle}>
         <div style={{ color: '#c084fc', fontSize: 22, fontWeight: 700 }}>
-          {avgCF !== null ? (avgCF * 100).toFixed(0) + '%' : '—'}
+          {avgCF !== null ? `${(avgCF * 100).toFixed(0)}%` : '—'}
         </div>
-        <div style={{ color: '#64748b', fontSize: 11 }}>avg capacity factor</div>
+        <div style={{ color: '#64748b', fontSize: 11 }}>
+          avg capacity factor
+        </div>
       </div>
     </div>
   );
@@ -377,13 +392,31 @@ function MonthlyTable({ monthly }: { monthly: MonthlyAnalysis[] }) {
               style={{ borderBottom: '1px solid #1e293b' }}
             >
               <td style={{ padding: '5px 10px' }}>{m.year_month}</td>
-              <td style={{ padding: '5px 10px', textAlign: 'right', color: '#4ade80' }}>
+              <td
+                style={{
+                  padding: '5px 10px',
+                  textAlign: 'right',
+                  color: '#4ade80',
+                }}
+              >
                 {m.actual_kwh?.toFixed(1) ?? '—'}
               </td>
-              <td style={{ padding: '5px 10px', textAlign: 'right', color: '#f59e0b' }}>
+              <td
+                style={{
+                  padding: '5px 10px',
+                  textAlign: 'right',
+                  color: '#f59e0b',
+                }}
+              >
                 {m.predicted_kwh?.toFixed(1) ?? '—'}
               </td>
-              <td style={{ padding: '5px 10px', textAlign: 'right', color: '#60a5fa' }}>
+              <td
+                style={{
+                  padding: '5px 10px',
+                  textAlign: 'right',
+                  color: '#60a5fa',
+                }}
+              >
                 {m.clear_sky_kwh?.toFixed(1) ?? '—'}
               </td>
               <td style={{ padding: '5px 10px', textAlign: 'right' }}>
@@ -397,7 +430,7 @@ function MonthlyTable({ monthly }: { monthly: MonthlyAnalysis[] }) {
               </td>
               <td style={{ padding: '5px 10px', textAlign: 'right' }}>
                 {m.capacity_factor !== null
-                  ? (m.capacity_factor * 100).toFixed(0) + '%'
+                  ? `${(m.capacity_factor * 100).toFixed(0)}%`
                   : '—'}
               </td>
             </tr>
@@ -474,8 +507,10 @@ export default function AnalysisTab() {
         setData(d);
         setLoading(false);
       })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Error loading analysis');
+      .catch((error_: unknown) => {
+        setError(
+          error_ instanceof Error ? error_.message : 'Error loading analysis',
+        );
         setLoading(false);
       });
   }, [viewMode, selectedYear, selectedMonth]);
@@ -483,7 +518,15 @@ export default function AnalysisTab() {
   return (
     <div style={{ paddingTop: 20, maxWidth: 1060 }}>
       {/* ── Title ── */}
-      <h2 style={{ color: '#f1f5f9', fontSize: 18, fontWeight: 700, marginBottom: 20, marginTop: 0 }}>
+      <h2
+        style={{
+          color: '#f1f5f9',
+          fontSize: 18,
+          fontWeight: 700,
+          marginBottom: 20,
+          marginTop: 0,
+        }}
+      >
         Solar Production Analysis
       </h2>
 
@@ -574,17 +617,17 @@ export default function AnalysisTab() {
           <em>
             A<sub>s</sub>
           </em>{' '}
-          (measured from north, clockwise). The angle of incidence <em>i</em>{' '}
-          on a panel with tilt β from horizontal and azimuth γ is:
+          (measured from north, clockwise). The angle of incidence <em>i</em> on
+          a panel with tilt β from horizontal and azimuth γ is:
         </p>
         <FormulaBlock html={F_AOI} />
         <p style={textStyle}>
           The east and west arrays (β = 10°) each receive direct beam in the
-          morning and afternoon respectively, while the vertical south facade
-          (β = 90°) captures beam radiation most effectively in winter when the
-          sun is low. The E/W split distributes production more evenly
-          throughout the day compared to a single south-facing roof, at the cost
-          of slightly lower annual yield.
+          morning and afternoon respectively, while the vertical south facade (β
+          = 90°) captures beam radiation most effectively in winter when the sun
+          is low. The E/W split distributes production more evenly throughout
+          the day compared to a single south-facing roof, at the cost of
+          slightly lower annual yield.
         </p>
       </section>
 
@@ -592,9 +635,7 @@ export default function AnalysisTab() {
       <section style={sectionStyle}>
         <h3 style={headingStyle}>3. Irradiance Transposition Model</h3>
 
-        <p style={subHeadingStyle}>
-          3a. Erbs Decomposition (GHI → DNI + DHI)
-        </p>
+        <p style={subHeadingStyle}>3a. Erbs Decomposition (GHI → DNI + DHI)</p>
         <p style={textStyle}>
           MeteoSwiss provides only global horizontal irradiance (GHI). To
           compute the direct normal irradiance (DNI) and diffuse horizontal
@@ -636,8 +677,8 @@ export default function AnalysisTab() {
         <h3 style={headingStyle}>4. Clear-sky Maximum (Bird Model)</h3>
         <p style={textStyle}>
           To estimate the theoretical maximum production under cloudless
-          conditions we use the Bird &amp; Hulstrom (1981) simplified
-          broadband clear-sky model:
+          conditions we use the Bird &amp; Hulstrom (1981) simplified broadband
+          clear-sky model:
         </p>
         <FormulaBlock html={F_CLEARSKY} />
         <p style={textStyle}>
@@ -664,22 +705,56 @@ export default function AnalysisTab() {
 
       {/* ── Comparison charts ── */}
       <section style={sectionStyle}>
-        <div style={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-          <h3 style={{ ...headingStyle, marginBottom: 0 }}>5. Comparison: Measured vs. Modelled Production</h3>
+        <div
+          style={{
+            alignItems: 'center',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 12,
+            marginBottom: 16,
+          }}
+        >
+          <h3 style={{ ...headingStyle, marginBottom: 0 }}>
+            5. Comparison: Measured vs. Modelled Production
+          </h3>
 
           <ButtonGroup variant="outlined" size="small">
-            <Button active={viewMode === 'year'} onClick={() => setViewMode('year')}>Year</Button>
-            <Button active={viewMode === 'month'} onClick={() => setViewMode('month')}>Month</Button>
+            <Button
+              active={viewMode === 'year'}
+              onClick={() => setViewMode('year')}
+            >
+              Year
+            </Button>
+            <Button
+              active={viewMode === 'month'}
+              onClick={() => setViewMode('month')}
+            >
+              Month
+            </Button>
           </ButtonGroup>
 
           <ButtonGroup variant="outlined" size="small">
-            <Button icon="chevron-left" disabled={!canGoPrev} onClick={() => navigate(-1)} />
-            <Button style={{ minWidth: 90, textAlign: 'center' }}>{periodLabel}</Button>
-            <Button icon="chevron-right" disabled={!canGoNext} onClick={() => navigate(1)} />
+            <Button
+              icon="chevron-left"
+              disabled={!canGoPrev}
+              onClick={() => navigate(-1)}
+            />
+            <Button style={{ minWidth: 90, textAlign: 'center' }}>
+              {periodLabel}
+            </Button>
+            <Button
+              icon="chevron-right"
+              disabled={!canGoNext}
+              onClick={() => navigate(1)}
+            />
           </ButtonGroup>
 
-          {loading && <span style={{ color: '#64748b', fontSize: 12 }}>Computing…</span>}
-          {error && <span style={{ color: '#f87171', fontSize: 12 }}>{error}</span>}
+          {loading && (
+            <span style={{ color: '#64748b', fontSize: 12 }}>Computing…</span>
+          )}
+          {error && (
+            <span style={{ color: '#f87171', fontSize: 12 }}>{error}</span>
+          )}
         </div>
 
         {data ? (
@@ -706,18 +781,18 @@ export default function AnalysisTab() {
             <ComparisonChart daily={data.daily} />
           </>
         ) : (
-          <div style={{ color: '#64748b', padding: '40px 0', textAlign: 'center' }}>
+          <div
+            style={{ color: '#64748b', padding: '40px 0', textAlign: 'center' }}
+          >
             {loading ? 'Computing solar model…' : 'No data'}
           </div>
         )}
 
         <p style={{ ...textStyle, marginTop: 16 }}>
-          The{' '}
-          <strong style={{ color: '#4ade80' }}>green curve</strong> is the
+          The <strong style={{ color: '#4ade80' }}>green curve</strong> is the
           actual daily production from the Fronius SolarWeb 5-minute energy
-          meter. The{' '}
-          <strong style={{ color: '#f59e0b' }}>amber curve</strong> is the model
-          prediction driven by MeteoSwiss GHI. The{' '}
+          meter. The <strong style={{ color: '#f59e0b' }}>amber curve</strong>{' '}
+          is the model prediction driven by MeteoSwiss GHI. The{' '}
           <strong style={{ color: '#60a5fa' }}>blue curve</strong> is the
           clear-sky maximum from the Bird model, independent of measured
           radiation. Days where the amber and green curves closely track
@@ -739,18 +814,20 @@ export default function AnalysisTab() {
             </div>
           </>
         ) : (
-          <div style={{ color: '#64748b', padding: '40px 0', textAlign: 'center' }}>
+          <div
+            style={{ color: '#64748b', padding: '40px 0', textAlign: 'center' }}
+          >
             {loading ? 'Loading…' : 'No data'}
           </div>
         )}
 
         <p style={{ ...textStyle, marginTop: 16 }}>
           <strong>Correction factor</strong> = actual / model-predicted. A value
-          below 1 indicates system losses not captured by the simple η model (inverter
-          efficiency ~97%, wiring ~2%, temperature derating ~3–8% in summer,
-          soiling ~1–2%). Expected range: 0.70–0.85. Values above 1 suggest the
-          MeteoSwiss station experiences slightly less irradiance than the
-          installation (station is ~6 km away). The{' '}
+          below 1 indicates system losses not captured by the simple η model
+          (inverter efficiency ~97%, wiring ~2%, temperature derating ~3–8% in
+          summer, soiling ~1–2%). Expected range: 0.70–0.85. Values above 1
+          suggest the MeteoSwiss station experiences slightly less irradiance
+          than the installation (station is ~6 km away). The{' '}
           <strong>capacity factor</strong> = actual / clear-sky theoretical,
           indicating what fraction of the astronomical maximum was captured.
         </p>
@@ -761,23 +838,25 @@ export default function AnalysisTab() {
         <h3 style={headingStyle}>7. Weekly Production Envelope</h3>
         <p style={textStyle}>
           For each of the 52 calendar weeks, the chart below shows the{' '}
-          <strong style={{ color: '#4ade80' }}>single best daily production</strong>{' '}
+          <strong style={{ color: '#4ade80' }}>
+            single best daily production
+          </strong>{' '}
           recorded across <em>all available years</em> of data. Taking the
           maximum rather than the mean eliminates the influence of cloudy days:
           overcast readings are outliers toward zero, while the peak represents
-          what the system actually achieved on a clear day during that week of the
-          year. The resulting curve traces the empirical seasonal capacity of the
-          installation — rising steeply from winter to a summer plateau and
-          falling again in autumn — and can be compared directly with the
+          what the system actually achieved on a clear day during that week of
+          the year. The resulting curve traces the empirical seasonal capacity
+          of the installation — rising steeply from winter to a summer plateau
+          and falling again in autumn — and can be compared directly with the
           theoretical Bird clear-sky model in Section 4.
         </p>
         <WeeklyEnvelopeChart />
         <p style={{ ...textStyle, marginTop: 16 }}>
           Weeks with a lower recorded maximum (e.g. early January) may simply
           reflect that no fully clear day happened to fall in that week across
-          the observed years, or that snow covered the panels. As more years
-          of data accumulate the envelope will converge toward the true
-          clear-sky ceiling.
+          the observed years, or that snow covered the panels. As more years of
+          data accumulate the envelope will converge toward the true clear-sky
+          ceiling.
         </p>
       </section>
 
@@ -799,54 +878,73 @@ export default function AnalysisTab() {
               Insolation on Horizontal Surfaces
             </em>
             . SERI/TR-642-761, Solar Energy Research Institute.{' '}
-            <a href="https://en.wikipedia.org/wiki/Solar_irradiance" style={linkStyle}>
+            <a
+              href="https://en.wikipedia.org/wiki/Solar_irradiance"
+              style={linkStyle}
+            >
               Wikipedia: Solar irradiance
             </a>
           </li>
           <li style={citeStyle}>
-            Erbs, D.G., Klein, S.A. &amp; Duffie, J.A. (1982). Estimation of
-            the diffuse radiation fraction for hourly, daily and monthly-average
+            Erbs, D.G., Klein, S.A. &amp; Duffie, J.A. (1982). Estimation of the
+            diffuse radiation fraction for hourly, daily and monthly-average
             global radiation. <em>Solar Energy</em>, 28(4), 293–302.{' '}
-            <a href="https://doi.org/10.1016/0038-092X(82)90302-4" style={linkStyle}>
+            <a
+              href="https://doi.org/10.1016/0038-092X(82)90302-4"
+              style={linkStyle}
+            >
               doi:10.1016/0038-092X(82)90302-4
             </a>
           </li>
           <li style={citeStyle}>
             Liu, B.Y.H. &amp; Jordan, R.C. (1961). Daily insolation on surfaces
             tilted towards the equator. <em>ASHRAE Journal</em>, 3(10), 53–59.{' '}
-            <a href="https://en.wikipedia.org/wiki/Solar_irradiance" style={linkStyle}>
+            <a
+              href="https://en.wikipedia.org/wiki/Solar_irradiance"
+              style={linkStyle}
+            >
               Wikipedia: Solar irradiance
             </a>
           </li>
           <li style={citeStyle}>
-            Kasten, F. &amp; Young, A.T. (1989). Revised optical air mass
-            tables and approximation formula. <em>Applied Optics</em>, 28(22),
+            Kasten, F. &amp; Young, A.T. (1989). Revised optical air mass tables
+            and approximation formula. <em>Applied Optics</em>, 28(22),
             4735–4738.{' '}
             <a href="https://doi.org/10.1364/AO.28.004735" style={linkStyle}>
               doi:10.1364/AO.28.004735
-            </a>{' '}·{' '}
-            <a href="https://en.wikipedia.org/wiki/Air_mass_(solar_energy)" style={linkStyle}>
+            </a>{' '}
+            ·{' '}
+            <a
+              href="https://en.wikipedia.org/wiki/Air_mass_(solar_energy)"
+              style={linkStyle}
+            >
               Wikipedia: Air mass
             </a>
           </li>
           <li style={citeStyle}>
             Meeus, J. (1998). <em>Astronomical Algorithms</em> (2nd ed.).
             Willmann-Bell. — basis for the suncalc sun position algorithm.{' '}
-            <a href="https://en.wikipedia.org/wiki/Jean_Meeus" style={linkStyle}>
+            <a
+              href="https://en.wikipedia.org/wiki/Jean_Meeus"
+              style={linkStyle}
+            >
               Wikipedia: Jean Meeus
             </a>
           </li>
           <li style={citeStyle}>
             MeteoSwiss (2024). Open Government Data — Automatic weather network
             (SMN), station PRE (Pregny–Chambésy).{' '}
-            <a href="https://en.wikipedia.org/wiki/MeteoSwiss" style={linkStyle}>
+            <a
+              href="https://en.wikipedia.org/wiki/MeteoSwiss"
+              style={linkStyle}
+            >
               Wikipedia: MeteoSwiss
             </a>
           </li>
           <li style={citeStyle}>
             Duffie, J.A. &amp; Beckman, W.A. (2013).{' '}
-            <em>Solar Engineering of Thermal Processes</em> (4th ed.). Wiley.
-            — standard reference for transposition models and performance ratio.{' '}
+            <em>Solar Engineering of Thermal Processes</em> (4th ed.). Wiley. —
+            standard reference for transposition models and performance ratio.{' '}
             <a href="https://doi.org/10.1002/9781118671603" style={linkStyle}>
               doi:10.1002/9781118671603
             </a>

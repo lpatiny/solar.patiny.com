@@ -70,6 +70,7 @@ export interface AggregatedWeatherRow {
   timestamp: number;
   station: string;
   global_radiation_w: number | null;
+  global_radiation_w_max: number | null;
   temperature_c: number | null;
   humidity_pct: number | null;
   precipitation_mm: number | null;
@@ -84,4 +85,51 @@ export interface AggregatedStatsRow {
   import_kwh: number;
   self_consumption_kwh: number;
   battery_charge_kwh: number;
+}
+
+/** A configured device in the generic device registry. */
+export interface DeviceRow {
+  id: number;
+  name: string;
+  type: string;
+  host: string;
+  port: number;
+  ble_mac: string | null;
+  enabled: number;
+  poll_interval_ms: number;
+  created_at: number;
+}
+
+/** One battery reading sample, one row per poll per device. */
+export interface BatteryReadingRow {
+  id: number;
+  device_id: number;
+  timestamp: number;
+  soc_pct: number | null;
+  voltage_v: number | null;
+  current_a: number | null;
+  power_w: number | null;
+  ac_power_w: number | null;
+  energy_kwh: number | null;
+  internal_temp_c: number | null;
+  mos_temp_c: number | null;
+  inverter_state: number | null;
+  total_charge_kwh: number | null;
+  total_discharge_kwh: number | null;
+  daily_charge_kwh: number | null;
+  daily_discharge_kwh: number | null;
+}
+
+/** A battery reading ready to be persisted (no auto-increment id). */
+export type BatteryReadingInput = Omit<BatteryReadingRow, 'id'>;
+
+/** Aggregated battery reading over a time bucket. */
+export interface AggregatedBatteryRow {
+  bucket: number;
+  soc_pct: number | null;
+  power_w: number | null;
+  ac_power_w: number | null;
+  energy_kwh: number | null;
+  total_charge_kwh: number | null;
+  total_discharge_kwh: number | null;
 }

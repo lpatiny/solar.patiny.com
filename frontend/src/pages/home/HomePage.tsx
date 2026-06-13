@@ -11,7 +11,8 @@ import type { ChangeEvent } from 'react';
 import { useEffect, useState } from 'react';
 
 import AnalysisTab from './components/AnalysisTab.tsx';
-import BatteryCard from './components/BatteryCard.tsx';
+import BatteriesSummary from './components/BatteriesSummary.tsx';
+import BatteriesTab from './components/BatteriesTab.tsx';
 import ChargingStrategyChart from './components/ChargingStrategyChart.tsx';
 import ConfigCard from './components/ConfigCard.tsx';
 import DayPowerChart from './components/DayPowerChart.tsx';
@@ -19,8 +20,8 @@ import ElectricalCard from './components/ElectricalCard.tsx';
 import EnergyChart from './components/EnergyChart.tsx';
 import HistoryChart from './components/HistoryChart.tsx';
 import NeighborExportCard from './components/NeighborExportCard.tsx';
-import WeatherChart from './components/WeatherChart.tsx';
 import PowerFlowCard from './components/PowerFlowCard.tsx';
+import WeatherChart from './components/WeatherChart.tsx';
 
 type BatteryMode = 'auto' | 'charge' | 'discharge' | 'idle';
 
@@ -214,14 +215,9 @@ export default function HomePage() {
     };
   }, []);
 
-  function handleModeChange(mode: BatteryMode, ratePercent: number) {
-    void fetch('/api/battery/control', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, ratePercent }),
-    }).catch((error_: unknown) => {
-      setError(error_ instanceof Error ? error_.message : 'Control error');
-    });
+  function openBatteriesTab() {
+    setSelectedTab('batteries');
+    localStorage.setItem('solar-active-tab', 'batteries');
   }
 
   function setLast24h() {
@@ -336,13 +332,13 @@ export default function HomePage() {
         todayExportKwh={todayExport}
       />
       {battery && (
-        <BatteryCard
-          soc={battery.soc}
-          powerW={battery.power_w}
-          mode={battery.mode}
-          chargeRatePercent={battery.charge_rate_percent}
-          modbusEnabled={battery.modbus_enabled}
-          onModeChange={handleModeChange}
+        <BatteriesSummary
+          homeSoc={battery.soc}
+          homePowerW={battery.power_w}
+          homeHost={config?.fronius_host || config?.modbus_host || null}
+          homeCapacityKwh={battery.capacity_wh / 1000}
+          homeOffline={realtime?.is_stale ?? false}
+          onOpen={openBatteriesTab}
         />
       )}
       <ChargingStrategyChart />
@@ -350,8 +346,7 @@ export default function HomePage() {
     </div>
   );
 
-  const modbusDisabled =
-    !realtime || realtime.modbus_status === 'disabled';
+  const modbusDisabled = !realtime || realtime.modbus_status === 'disabled';
 
   const electricalPanel = (
     <div style={{ paddingTop: 20 }}>
@@ -557,6 +552,7 @@ export default function HomePage() {
       >
         <Tab id="overview" title="Overview" panel={overviewPanel} />
         <Tab id="electrical" title="Electrical" panel={electricalPanel} />
+        <Tab id="batteries" title="Batteries" panel={<BatteriesTab />} />
         <Tab id="history" title="History" panel={historyPanel} />
         <Tab id="analysis" title="Analysis" panel={<AnalysisTab />} />
         <Tab id="config" title="Configuration" panel={configPanel} />

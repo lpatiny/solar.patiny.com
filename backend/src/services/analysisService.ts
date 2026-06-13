@@ -67,12 +67,19 @@ function extraterrestrialCorrection(date: Date): number {
   return 1 + 0.033 * Math.cos((2 * Math.PI * dayOfYear) / 365);
 }
 
-// Broadband atmospheric transmittance for Bird & Hulstrom (1981).
-// The original paper uses 0.7 for "average" turbidity (Linke TL ≈ 3.5–4.0).
-// For the Swiss plateau with clean Alpine air, TL is typically 2.0–2.5,
-// which corresponds to a transmittance of ~0.80 and matches the empirical
-// clear-sky production maxima recorded by the system.
-const BIRD_TRANSMITTANCE = 0.8;
+// Seasonally-varying Bird & Hulstrom transmittance.
+// Swiss plateau atmosphere is drier and cleaner in winter (TL ≈ 1.5–2.0, T ≈ 0.86)
+// and hazier in summer due to water vapour and aerosols (TL ≈ 3.0–3.5, T ≈ 0.70).
+// The cosine modulation peaks at 1 Jan and troughs at 2 Jul, matching the known
+// seasonal cycle of Linke turbidity over the Swiss Mittelland.
+function birdTransmittance(date: Date): number {
+  const dayOfYear =
+    Math.floor(
+      (date.getTime() - new Date(date.getUTCFullYear(), 0, 0).getTime()) /
+        86_400_000,
+    ) + 1;
+  return 0.78 + 0.08 * Math.cos((2 * Math.PI * dayOfYear) / 365);
+}
 
 /**
  * Bird & Hulstrom (1981) simplified clear-sky GHI model.
@@ -85,7 +92,7 @@ export function clearSkyGhi(zenithDeg: number, date: Date): number {
   const am = airMass(zenithDeg);
   const cosZ = Math.cos((zenithDeg * Math.PI) / 180);
   const e0 = extraterrestrialCorrection(date);
-  return SOLAR_CONSTANT * e0 * cosZ * BIRD_TRANSMITTANCE ** (am ** 0.678);
+  return SOLAR_CONSTANT * e0 * cosZ * birdTransmittance(date) ** (am ** 0.678);
 }
 
 /**

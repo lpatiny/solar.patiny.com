@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { ConfigData } from '../HomePage.tsx';
 
+import DeviceConfigSection from './DeviceConfigSection.tsx';
+
 interface ConfigCardProps {
   config: ConfigData;
   onConfigChange: (updated: ConfigData) => void;
@@ -148,8 +150,9 @@ export default function ConfigCard({
         body: JSON.stringify({ cookies: cookiePaste }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || !data.ok)
+      if (!res.ok || !data.ok) {
         throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
       setImportSuccess(true);
       setCookiePaste('');
       setShowLoginHelper(false);
@@ -679,6 +682,8 @@ export default function ConfigCard({
           </span>
         )}
       </div>
+
+      <DeviceConfigSection />
 
       <SectionTitle title="Database" />
       {dbStats === null ? (

@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import fastifyStatic from '@fastify/static';
 
 import { buildApp } from './app.ts';
+import {
+  startBatteryPolling,
+  stopBatteryPolling,
+} from './services/batteryPoller.ts';
 import { startPoller, stopPoller } from './services/poller.ts';
 
 const fastify = await buildApp();
@@ -41,9 +45,11 @@ fastify.log.info(
 );
 
 startPoller(fastify.log);
+startBatteryPolling(fastify.log);
 
 fastify.addHook('onClose', () => {
   stopPoller();
+  stopBatteryPolling();
 });
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;

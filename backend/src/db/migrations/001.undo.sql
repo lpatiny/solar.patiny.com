@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS idx_battery_readings_device_ts;
+DROP TABLE IF EXISTS battery_readings;
+DROP TABLE IF EXISTS devices;
+DROP TABLE IF EXISTS solarweb_synced_dates;
+DROP TABLE IF EXISTS settings;
+DROP INDEX IF EXISTS idx_weather_ts_station;
+DROP TABLE IF EXISTS weather_readings;
+DROP TABLE IF EXISTS solarweb_readings;
+DROP INDEX IF EXISTS idx_readings_timestamp;
+DROP TABLE IF EXISTS readings;

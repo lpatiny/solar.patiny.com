@@ -222,11 +222,27 @@ export async function getForecast(
   const firstProxySlotTs =
     Math.floor(nowTs / SLOT_DURATION_S) * SLOT_DURATION_S;
 
-  const typicalConsumptionKwh =
-    (TYPICAL_CONSUMPTION_W * SLOT_DURATION_S) / 3_600_000;
   const batteryMaxChargeKwh =
     (BATTERY_MAX_CHARGE_W * SLOT_DURATION_S) / 3_600_000;
   const efficiencyFrac = panel.efficiencyPct / 100;
+
+  // Average consumption per 3-hour slot from the last 15 days of SolarWeb data
+  const fifteenDaysAgoTs = todayMidnightTs - 15 * 86_400;
+  const avgConsumptionRows = db
+    .statement<{ slot_hour_index: number; avg_consumption_w: number }>(
+      `SELECT
+         CAST(strftime('%H', timestamp, 'unixepoch', 'localtime') AS INTEGER) / 3 AS slot_hour_index,
+         AVG(self_consumption_w + import_w) AS avg_consumption_w
+       FROM solarweb_readings
+       WHERE timestamp BETWEEN ? AND ?
+       GROUP BY slot_hour_index
+       ORDER BY slot_hour_index`,
+    )
+    .all(fifteenDaysAgoTs, todayMidnightTs - 1);
+
+  const avgConsumptionBySlot = new Map(
+    avgConsumptionRows.map((r) => [r.slot_hour_index, r.avg_consumption_w]),
+  );
 
   let soc = currentSocPct;
   let totalDayPredictedKwh = 0;
@@ -253,6 +269,11 @@ export async function getForecast(
     const predictedProductionKwh =
       computeClearSkyKwh(slotStartTs, efficiencyFrac) * cloudFactor;
     const predictedIrradianceWm2 = clearSkyIrradianceWm2 * cloudFactor;
+
+    const slotConsumptionW =
+      avgConsumptionBySlot.get(i) ?? TYPICAL_CONSUMPTION_W;
+    const typicalConsumptionKwh =
+      (slotConsumptionW * SLOT_DURATION_S) / 3_600_000;
 
     totalDayPredictedKwh += predictedProductionKwh;
     if (!isPast) {
@@ -286,34 +307,42 @@ export async function getForecast(
 
     // Future/current slot: simulate charging strategy
     const socAtStart = soc;
-    const netAvailableKwh = Math.max(
-      0,
-      predictedProductionKwh - typicalConsumptionKwh,
-    );
-    const remainingCapacityKwh = Math.max(
-      0,
-      ((100 - soc) / 100) * BATTERY_CAPACITY_KWH,
-    );
+    const surplusKwh = predictedProductionKwh - typicalConsumptionKwh;
 
     let batteryChargeKwh = 0;
     let neighborExportKwh = 0;
 
-    if (netAvailableKwh > 0) {
+    if (surplusKwh > 0) {
+      const remainingCapacityKwh = Math.max(
+        0,
+        ((100 - soc) / 100) * BATTERY_CAPACITY_KWH,
+      );
       if (remainingCapacityKwh > 0) {
         // "Cut the top": charge battery from any surplus, limiting grid injection
         batteryChargeKwh = Math.min(
-          netAvailableKwh,
+          surplusKwh,
           batteryMaxChargeKwh,
           remainingCapacityKwh,
         );
-        neighborExportKwh = Math.max(0, netAvailableKwh - batteryChargeKwh);
+        neighborExportKwh = Math.max(0, surplusKwh - batteryChargeKwh);
       } else {
         // Battery full: export all surplus
-        neighborExportKwh = netAvailableKwh;
+        neighborExportKwh = surplusKwh;
       }
+      soc = Math.min(
+        100,
+        soc + (batteryChargeKwh / BATTERY_CAPACITY_KWH) * 100,
+      );
+    } else {
+      // Deficit: battery discharges to cover consumption that solar cannot meet
+      const deficitKwh = -surplusKwh;
+      const availableKwh = (soc / 100) * BATTERY_CAPACITY_KWH;
+      const batteryDischargeKwh = Math.min(deficitKwh, availableKwh);
+      soc = Math.max(
+        0,
+        soc - (batteryDischargeKwh / BATTERY_CAPACITY_KWH) * 100,
+      );
     }
-
-    soc = Math.min(100, soc + (batteryChargeKwh / BATTERY_CAPACITY_KWH) * 100);
 
     return {
       timestamp: slotStartTs,

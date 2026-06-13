@@ -8,6 +8,9 @@ interface FormulaBlockProps {
  * Renders a MathML formula using the browser's native MathML renderer.
  * React 19 supports MathML elements natively; this component handles
  * pre-built MathML strings for complex multi-element expressions.
+ * @param root0
+ * @param root0.html
+ * @param root0.inline
  */
 export default function FormulaBlock({
   html,

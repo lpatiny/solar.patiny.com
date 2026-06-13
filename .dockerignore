@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+compose*.yaml
+.env
+.env.local
+.git
+.github
+.claude
+coverage
+**/coverage
+dist
+**/dist
+data
+*.log
+*.tsbuildinfo
+.DS_Store

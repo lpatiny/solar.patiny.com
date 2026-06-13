@@ -55,9 +55,7 @@ export default function ComparisonChart({ daily }: ComparisonChartProps) {
 
   const visibleDaily = useMemo(
     () =>
-      zoomIndices
-        ? daily.slice(zoomIndices.start, zoomIndices.end + 1)
-        : daily,
+      zoomIndices ? daily.slice(zoomIndices.start, zoomIndices.end + 1) : daily,
     [daily, zoomIndices],
   );
 
@@ -156,7 +154,7 @@ export default function ComparisonChart({ daily }: ComparisonChartProps) {
         pointSize={0}
         enableArea={false}
         useMesh={false}
-        enableCrosshair={true}
+        enableCrosshair
         layers={brushLayers}
         legends={[
           {
@@ -179,7 +177,9 @@ export default function ComparisonChart({ daily }: ComparisonChartProps) {
               fontSize: 12,
             }}
           >
-            <strong style={{ color: '#f1f5f9' }}>{point.data.xFormatted}</strong>
+            <strong style={{ color: '#f1f5f9' }}>
+              {point.data.xFormatted}
+            </strong>
             <br />
             <span style={{ color: point.seriesColor }}>{point.seriesId}</span>
             {': '}

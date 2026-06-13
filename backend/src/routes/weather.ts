@@ -9,6 +9,9 @@ const WeatherReadingSchema = Type.Object({
   timestamp: Type.Number(),
   station: Type.String(),
   global_radiation_w: Type.Union([Type.Number(), Type.Null()]),
+  global_radiation_w_max: Type.Optional(
+    Type.Union([Type.Number(), Type.Null()]),
+  ),
   temperature_c: Type.Union([Type.Number(), Type.Null()]),
   humidity_pct: Type.Union([Type.Number(), Type.Null()]),
   precipitation_mm: Type.Union([Type.Number(), Type.Null()]),

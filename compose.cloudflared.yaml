@@ -1,12 +1,17 @@
 # Cloudflare Tunnel deployment — no port published on the host.
 #
+# Both containers share the host network stack (network_mode: host). This is
+# REQUIRED so the Marstek battery poller can discover/self-heal devices via UDP
+# broadcast, which never crosses a Docker bridge network. Because cloudflared is
+# also host-networked, it reaches the app on localhost.
+#
 # Cloudflare dashboard (https://dash.cloudflare.com):
 #   Networking → Tunnels → Create a tunnel → Cloudflared connector →
 #   copy the token into .env as TUNNEL_TOKEN=... → open the tunnel →
 #   Published applications tab → add application with
-#   Service = HTTP, URL = solar-monitoring:3000 (or your PORT value).
+#   Service = HTTP, URL = http://localhost:3000 (or your PORT value).
 #
-# Copy this file to compose.yaml and run: docker compose up -d
+# Select this file via COMPOSE_FILE in .env, then run: docker compose up -d
 
 services:
   solar-monitoring:
@@ -15,6 +20,7 @@ services:
     image: ghcr.io/cheminfo/solar-monitoring:latest
     build: .
     env_file: .env
+    network_mode: host
     volumes:
       - ./data:/app/data
     init: true
@@ -38,6 +44,7 @@ services:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
     env_file: .env
+    network_mode: host
     init: true
     read_only: true
     security_opt:

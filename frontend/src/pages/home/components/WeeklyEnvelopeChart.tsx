@@ -65,8 +65,8 @@ export default function WeeklyEnvelopeChart() {
         setPoints(data);
         setLoading(false);
       })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Load error');
+      .catch((error_: unknown) => {
+        setError(error_ instanceof Error ? error_.message : 'Load error');
         setLoading(false);
       });
   }, []);
@@ -116,7 +116,7 @@ export default function WeeklyEnvelopeChart() {
           tickValues: MONTH_WEEK_STARTS,
           format: (week) => {
             const idx = MONTH_WEEK_STARTS.indexOf(week as number);
-            return idx >= 0 ? (MONTH_NAMES[idx] ?? '') : '';
+            return idx !== -1 ? (MONTH_NAMES[idx] ?? '') : '';
           },
           legend: 'Week of year',
           legendOffset: 36,
@@ -151,7 +151,7 @@ export default function WeeklyEnvelopeChart() {
           },
         ]}
         tooltip={({ point }) => {
-          const weekIdx = (point.data.x as number) - 1;
+          const weekIdx = point.data.x - 1;
           const entry = points[weekIdx];
           const isClearSky = point.seriesId === 'Clear-sky model';
           return (
@@ -171,7 +171,7 @@ export default function WeeklyEnvelopeChart() {
                   <br />
                   Clear-sky:{' '}
                   <strong style={{ color: '#60a5fa' }}>
-                    {(point.data.y as number).toFixed(2)} kWh
+                    {point.data.y.toFixed(2)} kWh
                   </strong>
                 </>
               ) : (
@@ -181,7 +181,7 @@ export default function WeeklyEnvelopeChart() {
                   <br />
                   Production:{' '}
                   <strong style={{ color: '#4ade80' }}>
-                    {(point.data.y as number).toFixed(2)} kWh
+                    {point.data.y.toFixed(2)} kWh
                   </strong>
                 </>
               )}

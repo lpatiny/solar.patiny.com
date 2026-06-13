@@ -169,9 +169,18 @@ function buildForecastSeries(
 
   for (const slot of futureSlots) {
     const midMs = ((slot.timestamp + slot.endTimestamp) / 2) * 1000;
-    solar.push({ x: midMs, y: Math.round((slot.predictedProductionKwh / 3) * 1000) });
-    consumption.push({ x: midMs, y: Math.round((slot.typicalConsumptionKwh / 3) * 1000) });
-    injection.push({ x: midMs, y: Math.round((slot.neighborExportKwh / 3) * 1000) });
+    solar.push({
+      x: midMs,
+      y: Math.round((slot.predictedProductionKwh / 3) * 1000),
+    });
+    consumption.push({
+      x: midMs,
+      y: Math.round((slot.typicalConsumptionKwh / 3) * 1000),
+    });
+    injection.push({
+      x: midMs,
+      y: Math.round((slot.neighborExportKwh / 3) * 1000),
+    });
   }
 
   return [
@@ -228,15 +237,12 @@ export default function DayPowerChart() {
       .then((d) => setForecast(d as ForecastData))
       .catch(() => setForecast(null));
 
-    const interval = setInterval(
-      () => {
-        fetch('/api/forecast')
-          .then((r) => r.json())
-          .then((d) => setForecast(d as ForecastData))
-          .catch(() => undefined);
-      },
-      10 * 60_000,
-    );
+    const interval = setInterval(() => {
+      fetch('/api/forecast')
+        .then((r) => r.json())
+        .then((d) => setForecast(d as ForecastData))
+        .catch(() => undefined);
+    }, 10 * 60_000);
     return () => clearInterval(interval);
   }, [isToday]);
 
@@ -334,7 +340,9 @@ export default function DayPowerChart() {
   const allSeries = useMemo(
     () => [
       ...actualSeries.filter((s) => !hiddenIds.has(s.id)),
-      ...forecastSeries.filter((s) => !hiddenIds.has(s.id.replace('_forecast', ''))),
+      ...forecastSeries.filter(
+        (s) => !hiddenIds.has(s.id.replace('_forecast', '')),
+      ),
     ],
     [actualSeries, forecastSeries, hiddenIds],
   );
@@ -385,27 +393,31 @@ export default function DayPowerChart() {
               Reset zoom
             </Button>
           )}
-        <ButtonGroup variant="minimal">
-          <Button icon="chevron-left" size="small" onClick={() => {
-            setSelectedDate((d) => {
-              const prev = new Date(d);
-              prev.setDate(prev.getDate() - 1);
-              return prev;
-            });
-          }} />
-          <Button
-            size="small"
-            disabled={isToday}
-            onClick={() => {
-              setSelectedDate((d) => {
-                const next = new Date(d);
-                next.setDate(next.getDate() + 1);
-                return next;
-              });
-            }}
-            icon="chevron-right"
-          />
-        </ButtonGroup>
+          <ButtonGroup variant="minimal">
+            <Button
+              icon="chevron-left"
+              size="small"
+              onClick={() => {
+                setSelectedDate((d) => {
+                  const prev = new Date(d);
+                  prev.setDate(prev.getDate() - 1);
+                  return prev;
+                });
+              }}
+            />
+            <Button
+              size="small"
+              disabled={isToday}
+              onClick={() => {
+                setSelectedDate((d) => {
+                  const next = new Date(d);
+                  next.setDate(next.getDate() + 1);
+                  return next;
+                });
+              }}
+              icon="chevron-right"
+            />
+          </ButtonGroup>
         </div>
       </div>
 
