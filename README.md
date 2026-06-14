@@ -10,6 +10,9 @@ Solar energy monitoring and control dashboard for Fronius inverter with battery 
 - Optional Modbus TCP for advanced monitoring and battery charge control
 - Optional SolarWeb cloud API for daily production totals and history sync
 
+See [`docs/`](./docs/README.md) for hardware integration notes (battery specs,
+Marstek Modbus register map, and the Marstek Open API).
+
 ## Requirements
 
 - Node.js 24+ (for local development)
