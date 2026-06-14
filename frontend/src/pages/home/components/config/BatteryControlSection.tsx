@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import AutoStrategyPanel from './AutoStrategyPanel.tsx';
 import ManualBatteryPanel from './ManualBatteryPanel.tsx';
+import { secondaryTextStyle } from './configStyles.ts';
 
 /** How the Marstek batteries are driven. */
 export type StrategyMode = 'off' | 'auto' | 'manual';
@@ -121,13 +122,7 @@ export default function BatteryControlSection() {
 
   return (
     <div>
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--text-secondary)',
-          marginBottom: 8,
-        }}
-      >
+      <div style={{ ...secondaryTextStyle, marginBottom: 8 }}>
         Drives the Marstek batteries only. The BYD battery is not controllable
         and will have its own strategy.
       </div>
@@ -143,13 +138,7 @@ export default function BatteryControlSection() {
         onValueChange={(value) => void patch({ mode: value as StrategyMode })}
       />
 
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--text-secondary)',
-          margin: '8px 0 4px',
-        }}
-      >
+      <div style={{ ...secondaryTextStyle, margin: '8px 0 4px' }}>
         {description}
       </div>
 

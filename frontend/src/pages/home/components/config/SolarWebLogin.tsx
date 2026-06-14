@@ -1,7 +1,7 @@
 import { Button, Intent, Tag, TextArea } from '@blueprintjs/core';
 import { useEffect, useState } from 'react';
 
-import { Row } from './configUi.tsx';
+import { ErrorText, Row } from './configUi.tsx';
 
 interface SessionStatus {
   hasSession: boolean;
@@ -79,7 +79,7 @@ export default function SolarWebLogin() {
       {sessionStatus?.lastError && (
         <div
           style={{
-            color: '#fca5a5',
+            color: 'var(--danger)',
             fontSize: 11,
             marginTop: 4,
             wordBreak: 'break-all',
@@ -181,11 +181,7 @@ export default function SolarWebLogin() {
             >
               Import Session
             </Button>
-            {importError && (
-              <span style={{ fontSize: 11, color: '#fca5a5' }}>
-                {importError}
-              </span>
-            )}
+            {importError && <ErrorText>{importError}</ErrorText>}
           </div>
         </div>
       )}

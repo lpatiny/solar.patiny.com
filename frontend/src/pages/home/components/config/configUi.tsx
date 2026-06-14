@@ -1,4 +1,7 @@
-import { Icon, Tooltip } from '@blueprintjs/core';
+import type { NumericInputProps } from '@blueprintjs/core';
+import { Button, Icon, Intent, NumericInput, Tooltip } from '@blueprintjs/core';
+
+import { unitStyle } from './configStyles.ts';
 
 /**
  * A label with an optional question-mark help tooltip. The icon is positioned
@@ -95,5 +98,79 @@ export function SectionTitle({
         display: help ? 'inline-flex' : 'block',
       }}
     />
+  );
+}
+
+/**
+ * Inline error message in the shared danger color.
+ * @param root0 - Component props.
+ * @param root0.children - The error text to display.
+ * @returns A small red error span.
+ */
+export function ErrorText({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{ fontSize: 11, color: 'var(--danger)' }}>{children}</span>
+  );
+}
+
+/**
+ * A `NumericInput` with a muted unit suffix, fixed width and integer-only entry
+ * (`minorStepSize` defaults to `null`). All Blueprint `NumericInput` props pass
+ * through, so `min`/`max`/`stepSize`/`value`/`onValueChange` work as usual.
+ * @param root0 - Component props (Blueprint `NumericInputProps` plus the two below).
+ * @param root0.unit - The unit label rendered as the right element (e.g. `W`, `%`).
+ * @param root0.width - Input width in pixels. Defaults to `80`.
+ * @returns The unit-suffixed numeric input.
+ */
+export function UnitNumericInput({
+  unit,
+  width = 80,
+  ...props
+}: NumericInputProps & { unit: string; width?: number }) {
+  return (
+    <NumericInput
+      minorStepSize={null}
+      {...props}
+      style={{ width }}
+      rightElement={<span style={unitStyle}>{unit}</span>}
+    />
+  );
+}
+
+/**
+ * A primary save button with an optional inline error, laid out in the standard
+ * action row used at the bottom of the config sections.
+ * @param root0 - Component props.
+ * @param root0.label - The button label.
+ * @param root0.saving - Whether a save is in flight (shows the loading spinner).
+ * @param root0.error - The last error message, or null/undefined when there is none.
+ * @param root0.onSave - Called when the button is clicked.
+ * @returns The save-action row.
+ */
+export function SaveRow({
+  label,
+  saving,
+  error,
+  onSave,
+}: {
+  label: string;
+  saving: boolean;
+  error?: string | null;
+  onSave: () => void;
+}) {
+  return (
+    <div
+      style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}
+    >
+      <Button
+        intent={Intent.PRIMARY}
+        loading={saving}
+        size="small"
+        onClick={onSave}
+      >
+        {label}
+      </Button>
+      {error && <ErrorText>{error}</ErrorText>}
+    </div>
   );
 }

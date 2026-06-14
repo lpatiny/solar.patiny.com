@@ -1,11 +1,12 @@
-import { Button, Intent, NumericInput, Tag } from '@blueprintjs/core';
+import { Button, Intent, Tag } from '@blueprintjs/core';
 import { useEffect, useRef, useState } from 'react';
 
 import type { ConfigData } from '../../HomePage.tsx';
 
 import SolarWebLogin from './SolarWebLogin.tsx';
-import { unitStyle } from './configStyles.ts';
-import { Row, SectionTitle } from './configUi.tsx';
+import { patchConfig } from './configApi.ts';
+import { secondaryTextStyle } from './configStyles.ts';
+import { ErrorText, Row, SectionTitle, UnitNumericInput } from './configUi.tsx';
 
 interface SolarWebSectionProps {
   config: ConfigData;
@@ -52,16 +53,10 @@ export default function SolarWebSection({
   async function handleSaveDelay() {
     setSavingDelay(true);
     try {
-      const res = await fetch('/api/config', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // eslint-disable-next-line camelcase -- backend /api/config uses snake_case keys
-          solarweb_scrape_delay_ms: scrapeDelaySec * 1000,
-        }),
+      const updated = await patchConfig({
+        // eslint-disable-next-line camelcase -- backend /api/config uses snake_case keys
+        solarweb_scrape_delay_ms: scrapeDelaySec * 1000,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const updated = (await res.json()) as ConfigData;
       onConfigChange(updated);
     } catch {
       /* ignore — the value stays in the input */
@@ -155,13 +150,13 @@ export default function SolarWebSection({
         label="Scrape delay"
         help="Pause between each day fetched during a history sync, to avoid hammering the SolarWeb servers."
       >
-        <NumericInput
+        <UnitNumericInput
+          unit="s"
+          width={70}
           value={scrapeDelaySec}
           onValueChange={(v) => setScrapeDelaySec(v)}
           min={1}
           stepSize={10}
-          style={{ width: 70 }}
-          rightElement={<span style={unitStyle}>s</span>}
         />
       </Row>
       <div style={{ marginTop: 8 }}>
@@ -203,7 +198,7 @@ export default function SolarWebSection({
           </Button>
         )}
         {syncing && syncProgress && (
-          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+          <span style={secondaryTextStyle}>
             {syncProgress.currentDate ?? '…'}
             {syncProgress.total > 0 && (
               <>
@@ -214,16 +209,14 @@ export default function SolarWebSection({
           </span>
         )}
         {syncResult && !syncing && (
-          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+          <span style={secondaryTextStyle}>
             {syncResult.synced} days synced
             {syncResult.errors > 0 && `, ${syncResult.errors} errors`}
             {syncResult.cancelled && ' (cancelled)'}
             {syncResult.startDate ? ` from ${syncResult.startDate}` : ''}
           </span>
         )}
-        {syncError && !syncing && (
-          <span style={{ fontSize: 11, color: '#fca5a5' }}>{syncError}</span>
-        )}
+        {syncError && !syncing && <ErrorText>{syncError}</ErrorText>}
       </div>
 
       <SectionTitle title="SolarWeb Login" />

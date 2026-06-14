@@ -57,7 +57,7 @@ export default function DataSourcesSection({
       {modbusError && (
         <div
           style={{
-            color: '#fca5a5',
+            color: 'var(--danger)',
             fontSize: 11,
             marginTop: 4,
             wordBreak: 'break-all',
