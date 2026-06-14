@@ -36,11 +36,11 @@ Verified on Venus E 3.0 (all first-try replies when addressed correctly):
 Status payloads:
 
 - `Bat.GetStatus` → `{soc, charg_flag, dischrg_flag, bat_temp(°C),
-  bat_capacity(remaining Wh), rated_capacity}`. **`rated_capacity` reads
+bat_capacity(remaining Wh), rated_capacity}`. **`rated_capacity` reads
   5120 Wh** — a per-controller nominal, **not** the real ~11 kWh pack
   ([Battery specs](./battery-specs.md)).
 - `ES.GetStatus` → `{bat_soc, bat_cap:5120, pv_power, ongrid_power,
-  offgrid_power, total_pv / grid_output / grid_input / load_energy Wh}`.
+offgrid_power, total_pv / grid_output / grid_input / load_energy Wh}`.
 
 ## Power control via `ES.SetMode`
 
@@ -55,12 +55,12 @@ convention** — this caused a bug once (UI charge returned `-32602`):
   (ver 148).**
 - **To CHARGE → Manual mode with NEGATIVE power.**
   `config:{mode:"Manual", manual_cfg:{time_num:0, start_time:"00:00",
-  end_time:"23:59", week_set:127, power:-W, enable:1}}`. Verified: `power:-800` →
+end_time:"23:59", week_set:127, power:-W, enable:1}}`. Verified: `power:-800` →
   `ongrid_power -797` (charge from grid). `week_set` is a byte; 127 = all week.
   **`ES.GetMode` does NOT return the Manual schedule params**, so switching modes
   and back is lossy on the user's Manual schedule.
 - **Do NOT generalize "negative = charge" to Passive** — that is a Manual-only
-  rule. The `ongrid_power` *reading* sign is consistent across modes: **negative
+  rule. The `ongrid_power` _reading_ sign is consistent across modes: **negative
   = charging/importing, positive = discharging.**
 - Output is **capped (~800 W observed at high SOC)** even when commanding
   1500 W.

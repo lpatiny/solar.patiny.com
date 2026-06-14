@@ -31,22 +31,22 @@ package (already a dependency) works with this pattern.
 
 ## Register map (FC03 holding registers)
 
-| Register      | Meaning                          | Scaling           |
-| ------------- | -------------------------------- | ----------------- |
-| 32100         | battery voltage                  | ×0.01             |
-| 32101         | current (int16)                  | ×0.01             |
-| 32102         | battery power (int32 W)          | — (see below)     |
-| 32104         | SOC %                            | —                 |
-| 32105         | energy kWh                       | ×0.001            |
-| 32200         | AC voltage                       | ×0.1              |
-| 32202         | AC power (int32 W)               | — (see below)     |
-| 33000 / 33002 | total charge / discharge (uint32 kWh) | ×0.01        |
-| 33004 / 33006 | daily charge / discharge         | —                 |
-| 35000         | internal temperature (int16)     | ×0.1 °C           |
-| 35100         | inverter state                   | — (raw, see below)|
-| 35110–35112   | charge / discharge limits        | —                 |
-| 43000         | user work mode                   | —                 |
-| 42000–42021   | write-only control (RS485 enable, force charge/discharge) | — |
+| Register      | Meaning                                                   | Scaling            |
+| ------------- | --------------------------------------------------------- | ------------------ |
+| 32100         | battery voltage                                           | ×0.01              |
+| 32101         | current (int16)                                           | ×0.01              |
+| 32102         | battery power (int32 W)                                   | — (see below)      |
+| 32104         | SOC %                                                     | —                  |
+| 32105         | energy kWh                                                | ×0.001             |
+| 32200         | AC voltage                                                | ×0.1               |
+| 32202         | AC power (int32 W)                                        | — (see below)      |
+| 33000 / 33002 | total charge / discharge (uint32 kWh)                     | ×0.01              |
+| 33004 / 33006 | daily charge / discharge                                  | —                  |
+| 35000         | internal temperature (int16)                              | ×0.1 °C            |
+| 35100         | inverter state                                            | — (raw, see below) |
+| 35110–35112   | charge / discharge limits                                 | —                  |
+| 43000         | user work mode                                            | —                  |
+| 42000–42021   | write-only control (RS485 enable, force charge/discharge) | —                  |
 
 Source: `github.com/scruysberghs/ha-marstek-venus` and
 `bvweerd/marstek_modbus`.
