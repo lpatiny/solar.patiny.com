@@ -56,7 +56,7 @@ docker compose up -d --build
 
 1. Go to [Cloudflare dashboard](https://dash.cloudflare.com) → Networking → Tunnels → Create a tunnel → Cloudflared connector.
 2. Copy the tunnel token and add it to `.env` as `TUNNEL_TOKEN=...`.
-3. After starting the tunnel, go to Published applications tab → add application with Service `HTTP`, URL `http://localhost:3000` (the cloudflared sidecar is host-networked), hostname `solar-monitoring.lactame.com` (or your chosen domain).
+3. After starting the tunnel, go to Published applications tab → add application with Service `HTTP`, URL `http://localhost:60504` (the cloudflared sidecar is host-networked), hostname `solar-monitoring.lactame.com` (or your chosen domain).
 
 ```sh
 # in .env: COMPOSE_FILE=compose.cloudflared.yaml
@@ -80,7 +80,7 @@ npm install
 npm run dev
 ```
 
-The backend runs on `http://localhost:3000` and the Vite dev server on `http://localhost:5173` with API proxying to the backend. Set `PORT` in `.env` to change the backend port.
+The backend runs on `http://localhost:60504` and the Vite dev server on `http://localhost:5173` with API proxying to the backend. Set `PORT` in `.env` to change the backend port.
 
 ## Configuration
 
@@ -88,7 +88,7 @@ All configuration is via environment variables (see `.env.example` for the full 
 
 | Variable                | Default | Description                                    |
 | ----------------------- | ------- | ---------------------------------------------- |
-| `PORT`                  | `3000`  | Backend HTTP port                              |
+| `PORT`                  | `60504` | Backend HTTP port                              |
 | `FRONIUS_HOST`          | —       | Local inverter URL, e.g. `http://192.168.1.30` |
 | `POLL_INTERVAL_MS`      | `10000` | Data polling interval                          |
 | `MODBUS_ENABLED`        | `false` | Enable Modbus TCP polling                      |

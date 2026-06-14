@@ -58,5 +58,5 @@ fastify.addHook('onClose', () => {
   stopBatteryStrategy();
 });
 
-const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+const port = process.env.PORT ? Number(process.env.PORT) : 60504;
 await fastify.listen({ port, host: '0.0.0.0' });

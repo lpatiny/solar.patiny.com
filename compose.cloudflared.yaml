@@ -9,7 +9,7 @@
 #   Networking → Tunnels → Create a tunnel → Cloudflared connector →
 #   copy the token into .env as TUNNEL_TOKEN=... → open the tunnel →
 #   Published applications tab → add application with
-#   Service = HTTP, URL = http://localhost:3000 (or your PORT value).
+#   Service = HTTP, URL = http://localhost:60504 (or your PORT value).
 #
 # Select this file via COMPOSE_FILE in .env, then run: docker compose up -d
 

@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "check-types": "npm run check-types -w backend && npm run check-types -w frontend",
-    "dev": "lsof -ti:3000,5173 | xargs kill -9 2>/dev/null; concurrently --kill-others --kill-others-on-fail \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "dev": "lsof -ti:60504,5173 | xargs kill -9 2>/dev/null; concurrently --kill-others --kill-others-on-fail \"npm run dev -w backend\" \"npm run dev -w frontend\"",
     "eslint": "eslint --cache .",
     "eslint-fix": "eslint --cache --fix .",
     "prettier": "prettier --check .",

@@ -30,7 +30,7 @@ services:
       - 'traefik.http.routers.solar-monitoring.rule=Host(`solar-monitoring.cheminfo.org`)'
       - 'traefik.http.routers.solar-monitoring.entrypoints=websecure'
       - 'traefik.http.routers.solar-monitoring.tls.certresolver=letsencrypt'
-      - 'traefik.http.services.solar-monitoring.loadbalancer.server.port=${PORT:-3000}'
+      - 'traefik.http.services.solar-monitoring.loadbalancer.server.port=${PORT:-60504}'
     init: true
     read_only: true
     security_opt:

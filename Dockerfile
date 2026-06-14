@@ -30,10 +30,10 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 VOLUME /app/data
 
-EXPOSE 3000
+EXPOSE 60504
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=60504
 
 WORKDIR /app/backend
 CMD ["node", "--experimental-strip-types", "--experimental-sqlite", "src/server.ts"]
