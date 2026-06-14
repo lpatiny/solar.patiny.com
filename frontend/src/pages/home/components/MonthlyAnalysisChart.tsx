@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention -- API response fields use snake_case */
 import { ResponsiveBar } from '@nivo/bar';
 import { useMemo } from 'react';
 
@@ -90,7 +91,7 @@ export default function MonthlyAnalysisChart({
         tooltip={({ id, value, indexValue }) => (
           <div style={{ padding: '6px 10px', fontSize: 12 }}>
             <strong>{String(indexValue)}</strong> — {String(id)}:{' '}
-            <strong>{Number(value).toFixed(0)} kWh</strong>
+            <strong>{value.toFixed(0)} kWh</strong>
           </div>
         )}
       />

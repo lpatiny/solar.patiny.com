@@ -1,13 +1,10 @@
 {
   "extends": "@zakodium/tsconfig/jsx",
   "compilerOptions": {
-    "module": "ESNext",
-    "moduleResolution": "bundler",
     "noEmit": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": false,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUncheckedIndexedAccess": true,
+    // Keep CSS side-effect imports (Blueprint, react-circular-progressbar) type-checkable.
+    "noUncheckedSideEffectImports": false
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite*.ts"]
 }

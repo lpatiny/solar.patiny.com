@@ -21,17 +21,20 @@ export function SeasonLayer({
   innerHeight,
   timestamps,
 }: SeasonLayerProps) {
-  if (timestamps.length < 2) return null;
+  const firstTimestamp = timestamps[0];
+  if (timestamps.length < 2 || firstTimestamp === undefined) return null;
 
   const step = innerWidth / (timestamps.length - 1);
   const halfStep = step / 2;
 
   const bands: Array<{ startIdx: number; endIdx: number; half: Half }> = [];
-  let half = getSolarHalf(timestamps[0]!);
+  let half = getSolarHalf(firstTimestamp);
   let bandStart = 0;
 
   for (let i = 1; i < timestamps.length; i++) {
-    const h = getSolarHalf(timestamps[i]!);
+    const timestamp = timestamps[i];
+    if (timestamp === undefined) continue;
+    const h = getSolarHalf(timestamp);
     if (h !== half) {
       bands.push({ startIdx: bandStart, endIdx: i - 1, half });
       half = h;

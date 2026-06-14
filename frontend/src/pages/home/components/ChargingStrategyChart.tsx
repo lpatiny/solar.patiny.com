@@ -348,18 +348,17 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
 
   // Panel power: actual measured (solid) + predicted (dashed) + clear-sky (dashed, lighter)
   // globalRadiationWm2 × pvScalingFactor → estimated AC output power (W)
-  const { pvScalingFactor } = data;
   const radActual = data.meteoReadings.filter(
     (r): r is MeteoReading & { globalRadiationWm2: number } =>
       r.globalRadiationWm2 !== null && r.timestamp * 1000 <= nowMs,
   );
   const irradianceForecast = data.slots.map((s) => ({
     x: (s.timestamp + (s.endTimestamp - s.timestamp) / 2) * 1000,
-    y: Math.round(s.predictedIrradianceWm2 * pvScalingFactor),
+    y: Math.round(s.predictedIrradianceWm2 * data.pvScalingFactor),
   }));
   const clearSkyForecast = data.slots.map((s) => ({
     x: (s.timestamp + (s.endTimestamp - s.timestamp) / 2) * 1000,
-    y: Math.round(s.clearSkyIrradianceWm2 * pvScalingFactor),
+    y: Math.round(s.clearSkyIrradianceWm2 * data.pvScalingFactor),
   }));
 
   const irradianceLines = [
@@ -368,7 +367,7 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
       color: '#fbbf24',
       data: radActual.map((r) => ({
         x: r.timestamp * 1000,
-        y: Math.round(r.globalRadiationWm2 * pvScalingFactor),
+        y: Math.round(r.globalRadiationWm2 * data.pvScalingFactor),
       })),
     },
     {
@@ -682,14 +681,13 @@ function HistoryStrategyChart({ data }: { data: HistoryForecast }) {
       r.globalRadiationWm2 !== null,
   );
 
-  const { pvScalingFactor } = data;
   const irradianceLines = [
     {
       id: 'rad_actual',
       color: '#fbbf24',
       data: meteoRad.map((r) => ({
         x: r.timestamp * 1000,
-        y: Math.round(r.globalRadiationWm2 * pvScalingFactor),
+        y: Math.round(r.globalRadiationWm2 * data.pvScalingFactor),
       })),
     },
   ];

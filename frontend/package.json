@@ -10,21 +10,21 @@
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
-    "@blueprintjs/core": "^6.12.1",
-    "@blueprintjs/icons": "^6.9.1",
+    "@blueprintjs/core": "^6.16.0",
+    "@blueprintjs/icons": "^6.11.0",
     "@nivo/bar": "^0.99.0",
     "@nivo/core": "^0.99.0",
     "@nivo/line": "^0.99.0",
-    "react": "^19.1.0",
-    "react-circular-progressbar": "^2.1.0",
-    "react-dom": "^19.1.0"
+    "react": "^19.2.7",
+    "react-circular-progressbar": "^2.2.0",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@types/react": "^19.1.5",
-    "@types/react-dom": "^19.1.5",
-    "@vitejs/plugin-react": "^4.4.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
     "@zakodium/tsconfig": "^1.0.5",
-    "vite": "^6.3.5"
+    "vite": "^8.0.16"
   },
   "volta": {
     "extends": "../package.json"

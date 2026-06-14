@@ -496,10 +496,18 @@ export default function AnalysisTab() {
       : selectedYear * 12 + selectedMonth <
         now.getFullYear() * 12 + now.getMonth();
 
-  useEffect(() => {
-    const range = periodRange(viewMode, selectedYear, selectedMonth);
+  // Show the loader / clear the error as soon as the period changes — during
+  // render, not in the fetch effect, to avoid a cascading re-render.
+  const fetchKey = `${viewMode}|${selectedYear}|${selectedMonth}`;
+  const [loadingKey, setLoadingKey] = useState(fetchKey);
+  if (fetchKey !== loadingKey) {
+    setLoadingKey(fetchKey);
     setLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    const range = periodRange(viewMode, selectedYear, selectedMonth);
     void apiFetch<AnalysisData>(
       `/api/analysis?from=${range.from}&to=${range.to}`,
     )

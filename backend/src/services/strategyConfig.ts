@@ -17,6 +17,12 @@ const MARSTEK_RESERVE_DEFAULT = 5;
  */
 export type StrategyMode = 'off' | 'auto' | 'manual';
 
+const STRATEGY_MODES: ReadonlySet<StrategyMode> = new Set([
+  'off',
+  'auto',
+  'manual',
+]);
+
 /**
  * How the Marstek batteries discharge in automatic mode:
  * - `cover`: cover the house consumption only (Marstek first, never exporting).
@@ -119,7 +125,9 @@ function num(key: string, fallback: number): number {
  */
 function readMode(): StrategyMode {
   const raw = db.getSetting(KEYS.mode);
-  if (raw === 'off' || raw === 'auto' || raw === 'manual') return raw;
+  if (raw !== null && STRATEGY_MODES.has(raw as StrategyMode)) {
+    return raw as StrategyMode;
+  }
   const legacy = db.getSetting(LEGACY_ENABLED_KEY);
   if (legacy === '1') return 'auto';
   if (legacy === '0') return 'manual';

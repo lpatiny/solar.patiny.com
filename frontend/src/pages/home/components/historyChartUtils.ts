@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/naming-convention -- API response fields use snake_case */
-/* eslint-disable jsdoc/require-param, jsdoc/require-returns -- internal module, descriptions are sufficient */
 
 export type HistoryResolution = 'hourly' | 'daily' | 'monthly';
 
@@ -96,25 +95,25 @@ export function formatTime(ts: number, resolution: HistoryResolution): string {
 
 /** Extracts "Jul 1" from a daily key "Jul 1|2024". */
 export function dailyKeyToShort(key: string): string {
-  return key.includes('|') ? (key.split('|')[0] ?? key) : key;
+  return key.includes('|') ? (key.split('|', 1)[0] ?? key) : key;
 }
 
 /** Extracts "Jul 2024" from a daily key "Jul 1|2024" (month + year, for multi-year axes). */
 export function dailyKeyToMonthYear(key: string): string {
   const [datePart, year] = key.split('|');
   if (!datePart || !year) return key;
-  const month = datePart.split(' ')[0] ?? datePart;
+  const month = datePart.split(' ', 1)[0] ?? datePart;
   return `${month} ${year}`;
 }
 
 /** Extracts the date part from a formatTime hourly key (e.g. "Jul 1|09:00" → "Jul 1"). */
 export function hourlyKeyToDate(key: string): string {
-  return key.includes('|') ? (key.split('|')[0] ?? key) : key;
+  return key.includes('|') ? (key.split('|', 1)[0] ?? key) : key;
 }
 
 /** Extracts the time part from a formatTime hourly key (e.g. "Jul 1|09:00" → "09:00"). */
 export function hourlyKeyToTime(key: string): string {
-  return key.includes('|') ? (key.split('|')[1] ?? key) : key;
+  return key.includes('|') ? (key.split('|', 2)[1] ?? key) : key;
 }
 
 /** Formats a unix timestamp as HH:MM for use as the x-axis value in overlay mode. */

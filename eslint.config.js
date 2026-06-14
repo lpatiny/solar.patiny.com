@@ -1,31 +1,20 @@
 import { defineConfig, globalIgnores } from 'eslint/config';
-import react from 'eslint-config-cheminfo-react/base';
-import cheminfo from 'eslint-config-cheminfo-typescript';
-import globals from 'globals';
+import { globals } from 'eslint-config-zakodium';
+import react from 'eslint-config-zakodium/react';
+import ts from 'eslint-config-zakodium/ts';
+import unicorn from 'eslint-config-zakodium/unicorn';
 
-export default defineConfig([
-  globalIgnores([
-    '**/dist',
-    '**/node_modules',
-    'backend/coverage',
-    'backend/vitest.config.ts',
-  ]),
-  cheminfo,
+export default defineConfig(
+  globalIgnores(['**/dist', '**/coverage', 'backend/vitest.config.ts']),
+  ts,
+  unicorn,
   {
-    rules: {
-      'new-cap': ['error', { capIsNew: false }],
-    },
+    // TypeBox, Fastify and similar use uppercase non-constructor calls.
+    rules: { 'new-cap': ['error', { capIsNew: false }] },
   },
   {
     files: ['backend/**'],
-    languageOptions: {
-      globals: {
-        ...globals.nodeBuiltin,
-      },
-    },
+    languageOptions: { globals: { ...globals.nodeBuiltin } },
   },
-  {
-    files: ['frontend/**'],
-    extends: react,
-  },
-]);
+  { files: ['frontend/**'], extends: [react] },
+);

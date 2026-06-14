@@ -143,6 +143,29 @@ export default function DayPowerChart() {
   sel.setHours(0, 0, 0, 0);
   const isToday = sel.getTime() === today.getTime();
 
+  // Adjust state in response to derived changes during render (not in an effect)
+  // so it never triggers a cascading re-render: reset zoom when the selected day
+  // changes, and clear the forecast when leaving "today".
+  const [prevSelectedDate, setPrevSelectedDate] = useState(selectedDate);
+  if (selectedDate !== prevSelectedDate) {
+    setPrevSelectedDate(selectedDate);
+    setZoomRange(null);
+  }
+  const [wasToday, setWasToday] = useState(isToday);
+  if (isToday !== wasToday) {
+    setWasToday(isToday);
+    if (!isToday) setForecast(null);
+  }
+
+  // Live "now" marker position; ticks each minute while viewing today so the
+  // line tracks the clock without calling the impure Date.now() during render.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isToday) return;
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, [isToday]);
+
   const toggleId = useCallback((id: string) => {
     setHiddenIds((prev) => {
       const next = new Set(prev);
@@ -156,7 +179,6 @@ export default function DayPowerChart() {
   }, []);
 
   useEffect(() => {
-    setZoomRange(null);
     let cancelled = false;
     const { from, to } = dayBounds(selectedDate);
     const load = () =>
@@ -181,10 +203,7 @@ export default function DayPowerChart() {
   }, [selectedDate, isToday]);
 
   useEffect(() => {
-    if (!isToday) {
-      setForecast(null);
-      return;
-    }
+    if (!isToday) return;
     const load = () =>
       fetch('/api/forecast')
         .then((r) => r.json())
@@ -313,7 +332,7 @@ export default function DayPowerChart() {
       zeroLine,
       {
         axis: 'x' as const,
-        value: Date.now(),
+        value: nowMs,
         lineStyle: {
           stroke: '#94a3b8',
           strokeWidth: 1,
@@ -321,7 +340,7 @@ export default function DayPowerChart() {
         },
       },
     ];
-  }, [isToday]);
+  }, [isToday, nowMs]);
 
   const labelById = useCallback(
     (id: string) => seriesMeta.find((s) => s.id === id)?.label ?? id,

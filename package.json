@@ -19,13 +19,15 @@
     "test-backend": "npm run test -w backend"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "eslint": "^9",
-    "eslint-config-cheminfo-react": "^20.0.1",
-    "eslint-config-cheminfo-typescript": "^22.0.0",
-    "globals": "^17.5.0",
-    "prettier": "^3.8.3",
-    "typescript": "^5"
+    "eslint-config-zakodium": "^20.1.0",
+    "prettier": "^3.8.4",
+    "typescript": "^6"
+  },
+  "overrides": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "volta": {
     "node": "24.14.0"

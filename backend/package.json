@@ -7,10 +7,6 @@
   "scripts": {
     "check-types": "tsc --noEmit",
     "dev": "node --watch --experimental-strip-types --experimental-sqlite --env-file=../.env src/server.ts",
-    "eslint": "eslint src",
-    "eslint-fix": "eslint src --fix",
-    "prettier": "prettier --check src",
-    "prettier-write": "prettier --write src",
     "start": "node --experimental-strip-types --experimental-sqlite --env-file=../.env src/server.ts",
     "test": "npm run test-only && npm run check-types",
     "test-only": "vitest run --coverage",
@@ -26,13 +22,13 @@
     "modbus-serial": "^8.0.25",
     "postgrator": "^8.0.0",
     "suncalc": "^1.9.0",
-    "typebox": "^1.0.13"
+    "typebox": "^1.2.9"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^3.0.0",
+    "@types/node": "^25.9.3",
+    "@vitest/coverage-v8": "^4.1.8",
     "@zakodium/tsconfig": "^1.0.5",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.8"
   },
   "volta": {
     "extends": "../package.json"

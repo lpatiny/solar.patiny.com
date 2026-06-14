@@ -58,9 +58,17 @@ export default function BatteryHistoryChart({
   const [data, setData] = useState<BatteryHistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Show the loader as soon as the query inputs change — during render, not in
+  // the fetch effect, to avoid a cascading re-render.
+  const fetchKey = `${deviceId}|${resolution}|${from}|${to}`;
+  const [loadingKey, setLoadingKey] = useState(fetchKey);
+  if (fetchKey !== loadingKey) {
+    setLoadingKey(fetchKey);
+    setLoading(true);
+  }
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     const res = resolution === 'monthly' ? 'daily' : resolution;
     fetch(
       `/api/devices/${deviceId}/history?resolution=${res}&from=${from}&to=${to}`,

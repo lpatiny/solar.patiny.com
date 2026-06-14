@@ -47,7 +47,7 @@ function formatAxisLabel(
   const [datePart, suffix] = key.split('|') as [string, string];
   if (resolution === 'hourly') return suffix; // "09:00"
   if (isMultiYear) {
-    const month = datePart.split(' ')[0] ?? datePart;
+    const month = datePart.split(' ', 1)[0] ?? datePart;
     return `${month} ${suffix}`; // "Jul 2024"
   }
   return datePart; // "Jul 1"
@@ -126,7 +126,7 @@ export default function WeatherChart({
           const prev = byTs.get(row.timestamp);
           if (!prev || row.station === 'PUY') byTs.set(row.timestamp, row);
         }
-        const deduped = [...byTs.values()].sort(
+        const deduped = [...byTs.values()].toSorted(
           (a, b) => a.timestamp - b.timestamp,
         );
         if (!cancelled) {
@@ -372,7 +372,7 @@ export default function WeatherChart({
             />
           </div>
 
-          {radMaxData[0]!.data.length > 0 && (
+          {(radMaxData[0]?.data.length ?? 0) > 0 && (
             <div style={{ height: 180, marginTop: 24 }}>
               <ResponsiveLine
                 {...sharedLineProps}

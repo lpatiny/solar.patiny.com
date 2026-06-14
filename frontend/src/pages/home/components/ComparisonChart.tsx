@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/naming-convention -- API response fields use snake_case */
 import { ResponsiveLine } from '@nivo/line';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { BrushLayer } from './BrushLayer.tsx';
 
@@ -49,9 +50,13 @@ export default function ComparisonChart({ daily }: ComparisonChartProps) {
     end: number;
   } | null>(null);
 
-  useEffect(() => {
+  // Reset zoom when the data changes — done during render (not in an effect) so
+  // it doesn't trigger a cascading re-render.
+  const [prevDaily, setPrevDaily] = useState(daily);
+  if (daily !== prevDaily) {
+    setPrevDaily(daily);
     setZoomIndices(null);
-  }, [daily]);
+  }
 
   const visibleDaily = useMemo(
     () =>

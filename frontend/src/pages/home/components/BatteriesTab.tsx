@@ -49,7 +49,8 @@ export default function BatteriesTab() {
   }, []);
 
   const selected = devices.find((device) => device.id === selectedId) ?? null;
-  const now = Math.floor(Date.now() / 1000);
+  // 24 h window, fixed at mount; impure Date.now() must stay out of render.
+  const [now] = useState(() => Math.floor(Date.now() / 1000));
   const from = now - 86_400;
 
   if (loaded && devices.length === 0) {

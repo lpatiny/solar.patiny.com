@@ -54,7 +54,7 @@ function parseTimestamp(timeStr: string): number | null {
 
 function parseNum(raw: string): number | null {
   const trimmed = raw.trim();
-  if (trimmed === '' || trimmed === '-' || trimmed === 'na') return null;
+  if (['', '-', 'na'].includes(trimmed)) return null;
   const n = Number(trimmed);
   return Number.isNaN(n) ? null : n;
 }
