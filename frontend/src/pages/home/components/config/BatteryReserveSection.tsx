@@ -57,7 +57,10 @@ export default function BatteryReserveSection({
 
   return (
     <div>
-      <Row label="BYD reserve">
+      <Row
+        label="BYD reserve"
+        help="Minimum SOC hidden from the displays for the BYD battery. Capacity, energy and the SOC dial are rescaled over the usable range above this floor, so the battery reads 0–100%."
+      >
         <NumericInput
           value={bydReserve}
           onValueChange={(v) => setBydReserve(v)}
@@ -69,7 +72,10 @@ export default function BatteryReserveSection({
           rightElement={<span style={unitStyle}>%</span>}
         />
       </Row>
-      <Row label="Marstek reserve">
+      <Row
+        label="Marstek reserve"
+        help="Minimum SOC hidden from the displays for the Marstek batteries, and the floor the auto strategy will not discharge below."
+      >
         <NumericInput
           value={marstekReserve}
           onValueChange={(v) => setMarstekReserve(v)}

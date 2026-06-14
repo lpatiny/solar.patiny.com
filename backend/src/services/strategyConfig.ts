@@ -9,16 +9,34 @@ const MARSTEK_RESERVE_KEY = 'marstek_reserve_pct';
 const MARSTEK_RESERVE_DEFAULT = 5;
 
 /**
+ * How the Marstek batteries are driven:
+ * - `off`: control disabled — the loop releases the batteries and leaves them to
+ *   their own firmware behavior, commanding nothing.
+ * - `auto`: the autonomous strategy loop charges and discharges them.
+ * - `manual`: the loop is off; the operator commands the batteries directly.
+ */
+export type StrategyMode = 'off' | 'auto' | 'manual';
+
+/**
+ * How the Marstek batteries discharge in automatic mode:
+ * - `cover`: cover the house consumption only (Marstek first, never exporting).
+ * - `force`: discharge at the configured rate per battery, throttled so grid
+ *   injection never exceeds the injection limit (`injectTargetW`) — so it may
+ *   deliberately export to the grid, up to that limit.
+ */
+export type DischargeMode = 'cover' | 'force';
+
+/**
  * Tunable parameters of the autonomous Marstek control strategy. This strategy
  * drives only the Marstek Venus E batteries; the BYD battery is not controllable
  * and will have its own strategy.
  */
 export interface StrategyConfig {
   /**
-   * Whether the control loop actively commands the batteries.
-   * @default false
+   * How the batteries are driven (off / auto / manual).
+   * @default 'off'
    */
-  enabled: boolean;
+  mode: StrategyMode;
   /**
    * Grid injection level (W) the loop tolerates; only the surplus above this is
    * stored. The original "do not inject more than this".
@@ -36,22 +54,21 @@ export interface StrategyConfig {
    */
   chargeCeilingPct: number;
   /**
-   * Per-battery discharge ceiling (W). The loop discharges to cover house load
-   * (grid import), load-following, but never faster than this per battery — so
-   * the fleet covers at most `dischargeMaxW × battery count` (e.g. 400 W each =
-   * 800 W with two batteries).
+   * Per-battery discharge power (W). In `cover` mode it is the ceiling on
+   * load-following; in `force` mode it is the rate each battery is driven at
+   * (still throttled by the injection limit). The fleet does at most
+   * `dischargeMaxW × battery count` (e.g. 400 W each = 800 W with two batteries).
    * @default 400
    */
   dischargeMaxW: number;
   /**
-   * Marstek-priority discharge: cover the house consumption before the BYD does.
-   * When `true` (default) the loop discharges to cover the reconstructed post-PV
-   * house load — capped per battery — so the Marstek empties first and the BYD
-   * only supplies what the Marstek cannot. When `false` it only offsets net grid
-   * import, so the BYD effectively wins.
-   * @default true
+   * Discharge behavior: `cover` discharges only to cover the house consumption
+   * (Marstek first, never exporting); `force` discharges at {@link dischargeMaxW}
+   * per battery, throttled so grid injection stays at or below {@link injectTargetW}
+   * — so it deliberately exports to the grid, up to that limit.
+   * @default 'cover'
    */
-  dischargeCoverConsumption: boolean;
+  dischargeMode: DischargeMode;
   /**
    * Stop discharging a battery once its SOC falls to this percentage. Sourced
    * from the shared Marstek reserve (`marstek_reserve_pct`), not a strategy
@@ -68,22 +85,23 @@ export interface StrategyConfig {
 
 /** Setting key for each {@link StrategyConfig} field. */
 const KEYS = {
-  enabled: 'strategy_enabled',
+  mode: 'strategy_mode',
   injectTargetW: 'strategy_inject_target_w',
   chargeMaxW: 'strategy_charge_max_w',
   chargeCeilingPct: 'strategy_charge_ceiling_pct',
   dischargeMaxW: 'strategy_discharge_max_w',
-  dischargeCoverConsumption: 'strategy_discharge_cover_consumption',
+  dischargeMode: 'strategy_discharge_mode',
   intervalMs: 'strategy_interval_ms',
 } as const;
 
+/** Legacy boolean enabled flag, replaced by {@link KEYS.mode}. */
+const LEGACY_ENABLED_KEY = 'strategy_enabled';
+
 const DEFAULTS = {
-  enabled: false,
   injectTargetW: 500,
   chargeMaxW: 500,
   chargeCeilingPct: 100,
   dischargeMaxW: 400,
-  dischargeCoverConsumption: true,
   intervalMs: 30_000,
 } as const;
 
@@ -95,19 +113,46 @@ function num(key: string, fallback: number): number {
 }
 
 /**
+ * Resolve the control mode, falling back to the legacy boolean `strategy_enabled`
+ * flag (and then `off`) when the `strategy_mode` setting is not yet set.
+ * @returns the control mode
+ */
+function readMode(): StrategyMode {
+  const raw = db.getSetting(KEYS.mode);
+  if (raw === 'off' || raw === 'auto' || raw === 'manual') return raw;
+  const legacy = db.getSetting(LEGACY_ENABLED_KEY);
+  if (legacy === '1') return 'auto';
+  if (legacy === '0') return 'manual';
+  return 'off';
+}
+
+/**
+ * Resolve the discharge mode, defaulting to `cover`. The legacy boolean
+ * `strategy_discharge_cover_consumption` maps `'0'` (offset-import) to `force`,
+ * anything else to `cover`.
+ * @returns the discharge mode
+ */
+function readDischargeMode(): DischargeMode {
+  const raw = db.getSetting(KEYS.dischargeMode);
+  if (raw === 'cover' || raw === 'force') return raw;
+  const legacy = db.getSetting('strategy_discharge_cover_consumption');
+  if (legacy === '0') return 'force';
+  return 'cover';
+}
+
+/**
  * Read the current strategy configuration from the settings table, falling back
  * to {@link DEFAULTS} for any unset key.
  * @returns the resolved configuration
  */
 export function readStrategyConfig(): StrategyConfig {
   return {
-    enabled: (db.getSetting(KEYS.enabled) ?? '0') === '1',
+    mode: readMode(),
     injectTargetW: num(KEYS.injectTargetW, DEFAULTS.injectTargetW),
     chargeMaxW: num(KEYS.chargeMaxW, DEFAULTS.chargeMaxW),
     chargeCeilingPct: num(KEYS.chargeCeilingPct, DEFAULTS.chargeCeilingPct),
     dischargeMaxW: num(KEYS.dischargeMaxW, DEFAULTS.dischargeMaxW),
-    dischargeCoverConsumption:
-      (db.getSetting(KEYS.dischargeCoverConsumption) ?? '0') === '1',
+    dischargeMode: readDischargeMode(),
     dischargeFloorPct: num(MARSTEK_RESERVE_KEY, MARSTEK_RESERVE_DEFAULT),
     intervalMs: num(KEYS.intervalMs, DEFAULTS.intervalMs),
   };
@@ -122,8 +167,8 @@ export type StrategyConfigUpdate = Partial<StrategyConfig>;
  * @param update - the fields to write
  */
 export function writeStrategyConfig(update: StrategyConfigUpdate): void {
-  if (update.enabled !== undefined) {
-    db.upsertSetting(KEYS.enabled, update.enabled ? '1' : '0');
+  if (update.mode !== undefined) {
+    db.upsertSetting(KEYS.mode, update.mode);
   }
   if (update.injectTargetW !== undefined) {
     db.upsertSetting(KEYS.injectTargetW, String(update.injectTargetW));
@@ -137,11 +182,8 @@ export function writeStrategyConfig(update: StrategyConfigUpdate): void {
   if (update.dischargeMaxW !== undefined) {
     db.upsertSetting(KEYS.dischargeMaxW, String(update.dischargeMaxW));
   }
-  if (update.dischargeCoverConsumption !== undefined) {
-    db.upsertSetting(
-      KEYS.dischargeCoverConsumption,
-      update.dischargeCoverConsumption ? '1' : '0',
-    );
+  if (update.dischargeMode !== undefined) {
+    db.upsertSetting(KEYS.dischargeMode, update.dischargeMode);
   }
   if (update.intervalMs !== undefined) {
     db.upsertSetting(KEYS.intervalMs, String(update.intervalMs));

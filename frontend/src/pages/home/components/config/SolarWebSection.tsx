@@ -128,8 +128,14 @@ export default function SolarWebSection({
 
   return (
     <div>
-      <SectionTitle title="SolarWeb Cloud" />
-      <Row label="Cloud sync">
+      <SectionTitle
+        title="SolarWeb Cloud"
+        help="Fronius SolarWeb cloud account. When configured, historical daily stats are backfilled from SolarWeb in addition to the locally recorded readings."
+      />
+      <Row
+        label="Cloud sync"
+        help="Configured: SolarWeb credentials are saved and history can be synced. Not configured: add a login below."
+      >
         <Tag
           intent={config.solarweb_configured ? Intent.SUCCESS : Intent.WARNING}
           minimal
@@ -139,12 +145,16 @@ export default function SolarWebSection({
       </Row>
       <Row
         label="Stats source"
+        help="Where the statistics come from: SolarWeb cloud combined with local readings when configured, otherwise only the locally recorded readings."
         value={
           config.solarweb_configured ? 'SolarWeb + local' : 'Local readings'
         }
       />
 
-      <Row label="Scrape delay">
+      <Row
+        label="Scrape delay"
+        help="Pause between each day fetched during a history sync, to avoid hammering the SolarWeb servers."
+      >
         <NumericInput
           value={scrapeDelaySec}
           onValueChange={(v) => setScrapeDelaySec(v)}

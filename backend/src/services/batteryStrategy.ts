@@ -4,7 +4,7 @@ import { getLatest } from './batteryPoller.ts';
 import type { ManualAction } from './marstekControl.ts';
 import { setMarstekUdpManual } from './marstekControl.ts';
 import { getCurrentReading } from './poller.ts';
-import type { StrategyConfig } from './strategyConfig.ts';
+import type { StrategyConfig, StrategyMode } from './strategyConfig.ts';
 import { readStrategyConfig } from './strategyConfig.ts';
 
 interface Logger {
@@ -54,7 +54,7 @@ interface CommandState {
 
 const lastCommand = new Map<number, CommandState>();
 let timer: ReturnType<typeof setTimeout> | null = null;
-let lastEnabled = false;
+let lastMode: StrategyMode = 'off';
 let status: StrategyStatus = {
   enabled: false,
   phase: 'off',
@@ -102,30 +102,28 @@ export interface DeviceState {
  * the loop discharges to cover house load — capped per battery — down to the
  * floor.
  *
- * Cover-consumption mode (`config.dischargeCoverConsumption`, the Marstek-priority
- * behavior) makes the Marstek batteries supply the house load before the BYD does.
- * The Fronius meter cannot see the Marstek as a source, so a Marstek discharge
- * looks like reduced import: the meter reports `consumptionW = trueLoad −
- * marstekDischarge`. The true load is therefore reconstructed as `consumptionW +
- * totalDischarging`, and PV production is subtracted so the batteries cover only
- * the deficit and never export the panels. There is deliberately NO grid-balance
- * clamp: Marstek alone covers at most the load, so it can never feed the grid by
- * itself — only the BYD can, transiently, until it backs off, which is exactly how
- * Marstek takes priority and the BYD empties only for what Marstek cannot cover
- * (load above the per-battery cap, or once Marstek hits its floor).
+ * Discharge has two modes (`config.dischargeMode`):
  *
- * The conservative net-grid mode (flag off) instead only offsets net grid import
- * (`totalDischarging + import − injection`), so any other source covering the load
- * — the BYD — wins. Pure function of its inputs so it can be unit-tested.
+ * `cover` (the default) covers only the house load not already met by solar:
+ * `consumptionW − productionW`, capped per battery. `consumptionW` is the meter's
+ * true house load, so the Marstek supplies at most that post-solar deficit — it
+ * never over-discharges into the grid or into the BYD's charging (no
+ * battery-to-battery transfer), and solar always covers the house first.
+ *
+ * `force` discharges at {@link StrategyConfig.dischargeMaxW} per battery but
+ * throttled so grid injection never exceeds the injection limit
+ * ({@link StrategyConfig.injectTargetW}): the target is the grid balance excluding
+ * the Marstek (`totalDischarging + import − injection`) plus that limit, so the
+ * fleet deliberately exports up to the limit and no further. Charging from a large
+ * solar surplus still takes priority in both modes, so the whole strategy honors a
+ * single grid-injection ceiling. Pure function of its inputs so it can be unit-tested.
  * @param config - the resolved strategy configuration
  * @param devices - the enabled Marstek devices with their current state
  * @param injectionW - current grid injection / export (W, ≥0)
  * @param importW - current grid import (W, ≥0)
- * @param consumptionW - Fronius-reported house consumption (W); equals the true
- * house load minus the Marstek discharge the meter cannot see. Only used in
- * cover-consumption mode.
- * @param productionW - current PV production (W); subtracted in cover-consumption
- * mode so only the post-PV deficit is covered.
+ * @param consumptionW - the meter's true house load (W). Only used in `cover`.
+ * @param productionW - current PV production (W); subtracted in `cover` so only the
+ * post-PV deficit is covered.
  * @returns the phase and per-device decisions
  */
 export function decide(
@@ -177,18 +175,19 @@ export function decide(
     return { phase: 'charge', decisions };
   }
 
-  // Otherwise cover the house load. In cover-consumption (Marstek-priority) mode
-  // the target is the reconstructed post-PV deficit: trueLoad − PV, where
-  // trueLoad = consumptionW + the Marstek discharge the meter cannot see. Marstek
-  // alone never exceeds the load, so it cannot export by itself; the BYD empties
-  // only for what Marstek cannot cover. In net-grid mode the target is just the
-  // net grid import (plus what the batteries already supply), so the BYD wins.
+  // Otherwise discharge. In `cover` mode the target is the post-solar house
+  // deficit (consumptionW − production): solar covers the house first and the
+  // Marstek covers only the remainder, so it never over-discharges into the grid
+  // or the BYD's charging. In `force` mode the target is the grid balance excluding
+  // the Marstek (totalDischarging + import − injection) plus the injection limit,
+  // so the fleet runs at its rate but exports at most `injectTargetW` to the grid.
   const dischargeEligible = devices.filter(
     (device) => device.soc !== null && device.soc > config.dischargeFloorPct,
   );
-  const target = config.dischargeCoverConsumption
-    ? consumptionW + totalDischarging - productionW
-    : totalDischarging + importW - injectionW;
+  const target =
+    config.dischargeMode === 'force'
+      ? totalDischarging + importW - injectionW + config.injectTargetW
+      : consumptionW - productionW;
   const dischargeCap = config.dischargeMaxW * dischargeEligible.length;
   const desiredDischarge = Math.max(0, Math.min(target, dischargeCap));
   const perDischarge =
@@ -271,19 +270,24 @@ async function releaseControl(): Promise<void> {
 
 async function runCycle(): Promise<void> {
   const config = readStrategyConfig();
-  if (!config.enabled) {
-    const wasEnabled = lastEnabled;
-    lastEnabled = false;
-    if (wasEnabled) {
+  if (config.mode !== 'auto') {
+    // Not auto-controlling. Release the batteries (send stop once) when leaving
+    // auto, or when entering 'off' from manual — so a forced setpoint never
+    // lingers. In 'manual' the operator owns the batteries, so otherwise leave
+    // them untouched.
+    const leavingAuto = lastMode === 'auto';
+    const enteringOff = config.mode === 'off' && lastMode !== 'off';
+    lastMode = config.mode;
+    if (leavingAuto || enteringOff) {
       await releaseControl().catch((error: unknown) =>
-        log.error(error, '[strategy] failed to release control on disable'),
+        log.error(error, '[strategy] failed to release control'),
       );
-      log.info('[strategy] disabled — released battery control');
+      log.info(`[strategy] ${config.mode} — released battery control`);
     }
     status = { ...status, enabled: false, phase: 'off', error: null };
     return;
   }
-  lastEnabled = true;
+  lastMode = 'auto';
 
   const reading = getCurrentReading();
   const now = Date.now();
@@ -359,7 +363,7 @@ export function startBatteryStrategy(logger: Logger): void {
   log = logger;
   const config = readStrategyConfig();
   log.info(
-    `[strategy] Starting — ${config.enabled ? 'enabled' : 'disabled'}, every ${config.intervalMs / 1000}s`,
+    `[strategy] Starting — mode ${config.mode}, every ${config.intervalMs / 1000}s`,
   );
   scheduleNext(config.intervalMs);
 }

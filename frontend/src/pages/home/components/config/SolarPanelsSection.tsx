@@ -56,7 +56,10 @@ export default function SolarPanelsSection({
 
   return (
     <div>
-      <Row label="Surface area">
+      <Row
+        label="Surface area"
+        help="Total area of the solar panels. Used with efficiency to estimate the peak DC power and the clear-sky production forecast."
+      >
         <NumericInput
           value={panelSurface}
           onValueChange={(v) => setPanelSurface(v)}
@@ -67,7 +70,10 @@ export default function SolarPanelsSection({
           rightElement={<span style={unitStyle}>m²</span>}
         />
       </Row>
-      <Row label="Panel efficiency">
+      <Row
+        label="Panel efficiency"
+        help="Fraction of incident sunlight the panels convert to electricity at standard test conditions (typically 18–22% for modern panels)."
+      >
         <NumericInput
           value={panelEfficiency}
           onValueChange={(v) => setPanelEfficiency(v)}
@@ -79,7 +85,10 @@ export default function SolarPanelsSection({
           rightElement={<span style={unitStyle}>%</span>}
         />
       </Row>
-      <Row label="Performance ratio">
+      <Row
+        label="Performance ratio"
+        help="Overall system derating (wiring, inverter, soiling, mismatch) applied to the ideal output. A typical real-world value is 0.75–0.85."
+      >
         <NumericInput
           value={performanceRatio}
           onValueChange={(v) => setPerformanceRatio(v)}
@@ -91,7 +100,10 @@ export default function SolarPanelsSection({
           rightElement={<span style={unitStyle}>(0–1)</span>}
         />
       </Row>
-      <Row label="Temp. coefficient">
+      <Row
+        label="Temp. coefficient"
+        help="Power lost per °C the panels run above 25°C. Used to derate the forecast on hot days."
+      >
         <NumericInput
           value={tempCoeff}
           onValueChange={(v) => setTempCoeff(v)}
@@ -105,6 +117,7 @@ export default function SolarPanelsSection({
       </Row>
       <Row
         label="Peak DC power"
+        help="Estimated nameplate DC power = surface × efficiency. Derived from the values above."
         value={`${((panelSurface * panelEfficiency) / 100).toFixed(1)} kW`}
       />
       <div

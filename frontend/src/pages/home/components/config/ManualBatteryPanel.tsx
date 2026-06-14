@@ -76,10 +76,16 @@ export default function ManualBatteryPanel() {
       )}
 
       <LoginPanel>
-        <SectionTitle title="Immediate control" />
+        <SectionTitle
+          title="Immediate control"
+          help="Send a one-off charge, discharge or stop command to the selected battery right now. Stays in effect until it expires or you send another."
+        />
         <ManualControl deviceId={selected.id} />
 
-        <SectionTitle title="Schedule (per day / hour)" />
+        <SectionTitle
+          title="Schedule (per day / hour)"
+          help="Program recurring charge/discharge slots that run on the battery itself. Write-only: the device cannot report its current schedule back."
+        />
         <Callout intent="primary" style={{ margin: '4px 0 8px' }}>
           Slots are pushed to the battery and run on the device itself. Charge
           slots draw from the grid; discharge slots feed it. The device cannot

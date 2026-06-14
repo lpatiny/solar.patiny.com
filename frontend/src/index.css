@@ -28,6 +28,22 @@
   outline: none !important;
 }
 
+/* Inline question-mark help icon next to a label, vertically centered.
+   The Tooltip's className is merged onto the .bp6-popover-target element, so
+   forcing it to flex (with !important to beat Blueprint's higher-specificity
+   rules) makes it hug the icon and the row centers the glyph against the text. */
+.help-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.help-label .help-icon.bp6-popover-target {
+  display: flex !important;
+  align-items: center;
+  margin-top: 0;
+}
+
 body {
   background: var(--bg);
   color: var(--text);

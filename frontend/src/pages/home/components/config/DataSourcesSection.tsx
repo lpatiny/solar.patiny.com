@@ -17,12 +17,25 @@ export default function DataSourcesSection({
 }: DataSourcesSectionProps) {
   return (
     <div>
-      <SectionTitle title="Fronius REST" />
+      <SectionTitle
+        title="Fronius REST"
+        help="The Fronius inverter's local REST API — the primary source of live production, consumption and grid readings."
+      />
       <Row label="Host" value={config.fronius_host} />
-      <Row label="Poll interval" value={`${config.poll_interval_ms / 1000}s`} />
+      <Row
+        label="Poll interval"
+        help="How often the backend reads the Fronius REST API."
+        value={`${config.poll_interval_ms / 1000}s`}
+      />
 
-      <SectionTitle title="Modbus TCP" />
-      <Row label="Status">
+      <SectionTitle
+        title="Modbus TCP"
+        help="Direct Modbus TCP link to the inverter/meter, used for register-level readings beyond the REST API."
+      />
+      <Row
+        label="Status"
+        help="Connected: Modbus polling is live. Error: the connection failed (see message below). Disabled: Modbus is turned off."
+      >
         {modbusStatus === 'ok' && (
           <Tag intent={Intent.SUCCESS} minimal>
             Connected

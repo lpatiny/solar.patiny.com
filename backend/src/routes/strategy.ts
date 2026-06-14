@@ -13,13 +13,24 @@ import {
 } from '../services/strategyConfig.ts';
 import type { FastifyTyped } from '../types.ts';
 
+const ModeSchema = Type.Union([
+  Type.Literal('off'),
+  Type.Literal('auto'),
+  Type.Literal('manual'),
+]);
+
+const DischargeModeSchema = Type.Union([
+  Type.Literal('cover'),
+  Type.Literal('force'),
+]);
+
 const ConfigPart = Type.Object({
-  enabled: Type.Boolean(),
+  mode: ModeSchema,
   inject_target_w: Type.Number(),
   charge_max_w: Type.Number(),
   charge_ceiling_pct: Type.Number(),
   discharge_max_w: Type.Number(),
-  discharge_cover_consumption: Type.Boolean(),
+  discharge_mode: DischargeModeSchema,
   discharge_floor_pct: Type.Number(),
   interval_ms: Type.Number(),
 });
@@ -48,7 +59,7 @@ const StrategyResponse = Type.Object({
 });
 
 const UpdateBody = Type.Object({
-  enabled: Type.Optional(Type.Boolean()),
+  mode: Type.Optional(ModeSchema),
   inject_target_w: Type.Optional(Type.Number({ minimum: 0, maximum: 20_000 })),
   charge_max_w: Type.Optional(
     Type.Number({ minimum: 0, maximum: MAX_CHARGE_POWER_W }),
@@ -57,7 +68,7 @@ const UpdateBody = Type.Object({
   discharge_max_w: Type.Optional(
     Type.Number({ minimum: 0, maximum: MAX_DISCHARGE_POWER_W }),
   ),
-  discharge_cover_consumption: Type.Optional(Type.Boolean()),
+  discharge_mode: Type.Optional(DischargeModeSchema),
   // discharge_floor_pct is read-only here: it mirrors the Marstek battery
   // reserve, edited in the Battery Reserve config section (/api/config).
   interval_ms: Type.Optional(
@@ -70,12 +81,12 @@ function snapshot() {
   const status = getStrategyStatus();
   return {
     config: {
-      enabled: config.enabled,
+      mode: config.mode,
       inject_target_w: config.injectTargetW,
       charge_max_w: config.chargeMaxW,
       charge_ceiling_pct: config.chargeCeilingPct,
       discharge_max_w: config.dischargeMaxW,
-      discharge_cover_consumption: config.dischargeCoverConsumption,
+      discharge_mode: config.dischargeMode,
       discharge_floor_pct: config.dischargeFloorPct,
       interval_ms: config.intervalMs,
     },
@@ -128,12 +139,12 @@ export default async function strategyRoutes(fastify: FastifyTyped) {
     (request) => {
       const body = request.body;
       writeStrategyConfig({
-        enabled: body.enabled,
+        mode: body.mode,
         injectTargetW: body.inject_target_w,
         chargeMaxW: body.charge_max_w,
         chargeCeilingPct: body.charge_ceiling_pct,
         dischargeMaxW: body.discharge_max_w,
-        dischargeCoverConsumption: body.discharge_cover_consumption,
+        dischargeMode: body.discharge_mode,
         intervalMs: body.interval_ms,
       });
       return snapshot();

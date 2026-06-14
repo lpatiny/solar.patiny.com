@@ -1,5 +1,11 @@
 /* eslint-disable camelcase -- backend /api/strategy uses snake_case keys */
-import { Button, Intent, NumericInput, Switch, Tag } from '@blueprintjs/core';
+import {
+  Button,
+  Intent,
+  NumericInput,
+  SegmentedControl,
+  Tag,
+} from '@blueprintjs/core';
 
 import type {
   StrategyConfig,
@@ -51,7 +57,10 @@ export default function AutoStrategyPanel({
   return (
     <div>
       <SectionTitle title="Charge (solar surplus)" />
-      <Row label="Keep injecting up to">
+      <Row
+        label="Keep injecting up to"
+        help="Grid export to preserve before charging. Only the solar surplus above this value is stored in the batteries; the rest keeps flowing to the grid. Set to 0 to bank all surplus and export nothing."
+      >
         <NumericInput
           value={config.inject_target_w}
           onValueChange={set('inject_target_w')}
@@ -63,7 +72,10 @@ export default function AutoStrategyPanel({
           rightElement={<span style={unitStyle}>W</span>}
         />
       </Row>
-      <Row label="Max charge / battery">
+      <Row
+        label="Max charge / battery"
+        help="Upper limit on the charge power commanded to each Marstek battery, regardless of how much surplus is available."
+      >
         <NumericInput
           value={config.charge_max_w}
           onValueChange={set('charge_max_w')}
@@ -75,7 +87,10 @@ export default function AutoStrategyPanel({
           rightElement={<span style={unitStyle}>W</span>}
         />
       </Row>
-      <Row label="Charge up to">
+      <Row
+        label="Charge up to"
+        help="Stop charging a battery once its state of charge reaches this level."
+      >
         <NumericInput
           value={config.charge_ceiling_pct}
           onValueChange={set('charge_ceiling_pct')}
@@ -88,8 +103,33 @@ export default function AutoStrategyPanel({
         />
       </Row>
 
-      <SectionTitle title="Discharge (cover house load)" />
-      <Row label="Max discharge / battery">
+      <SectionTitle title="Discharge" />
+      <Row
+        label="Discharge mode"
+        help="Cover: discharge only to cover the house consumption (Marstek first, never exporting). Force: discharge at the rate below, exporting to the grid up to the injection limit set above."
+      >
+        <SegmentedControl
+          options={[
+            { label: 'Cover', value: 'cover' },
+            { label: 'Force', value: 'force' },
+          ]}
+          value={config.discharge_mode}
+          onValueChange={(value) =>
+            setConfig({
+              ...config,
+              discharge_mode: value as 'cover' | 'force',
+            })
+          }
+        />
+      </Row>
+      <Row
+        label={
+          config.discharge_mode === 'force'
+            ? 'Discharge rate / battery'
+            : 'Max discharge / battery'
+        }
+        help="Discharge power per Marstek battery — the rate each is driven at in Force mode, or the ceiling on load-following in Cover mode."
+      >
         <NumericInput
           value={config.discharge_max_w}
           onValueChange={set('discharge_max_w')}
@@ -101,19 +141,6 @@ export default function AutoStrategyPanel({
           rightElement={<span style={unitStyle}>W</span>}
         />
       </Row>
-      <Row label="Cover house load (Marstek first)">
-        <Switch
-          checked={config.discharge_cover_consumption}
-          alignIndicator="right"
-          style={{ margin: 0 }}
-          onChange={(event) =>
-            setConfig({
-              ...config,
-              discharge_cover_consumption: event.currentTarget.checked,
-            })
-          }
-        />
-      </Row>
       <div
         style={{
           fontSize: 11,
@@ -121,17 +148,21 @@ export default function AutoStrategyPanel({
           padding: '4px 0',
         }}
       >
-        {config.discharge_cover_consumption
-          ? 'On (Marstek priority): the Marstek batteries cover the house load (after solar, capped per battery) so they empty first and the BYD only supplies what they cannot.'
-          : 'Off: discharge only to offset net grid import — whatever else covers the load (the BYD) wins, so the Marstek may stay idle.'}
+        {config.discharge_mode === 'force'
+          ? `Force: each battery discharges at the rate above, but throttled so grid injection never exceeds the "Keep injecting up to" limit (${config.inject_target_w} W) — so it deliberately exports up to that limit.`
+          : 'Cover: the Marstek batteries cover the house load (after solar, capped per battery) so they empty first and the BYD only supplies what they cannot — never exporting.'}
       </div>
       <Row
         label="Stop discharging at"
+        help="Discharge floor — the strategy never drains a Marstek below this. It tracks the Marstek reserve set in Battery Reserve, so the displayed 0% is preserved."
         value={`${config.discharge_floor_pct}% · Marstek reserve`}
       />
 
       <SectionTitle title="Loop" />
-      <Row label="Cycle interval">
+      <Row
+        label="Cycle interval"
+        help="How often the control loop re-reads the meter and re-commands the batteries."
+      >
         <NumericInput
           value={Math.round(config.interval_ms / 1000)}
           onValueChange={(v) => set('interval_ms')(Math.round(v) * 1000)}
@@ -157,7 +188,7 @@ export default function AutoStrategyPanel({
               charge_max_w: config.charge_max_w,
               charge_ceiling_pct: config.charge_ceiling_pct,
               discharge_max_w: config.discharge_max_w,
-              discharge_cover_consumption: config.discharge_cover_consumption,
+              discharge_mode: config.discharge_mode,
               interval_ms: config.interval_ms,
             })
           }
@@ -172,13 +203,17 @@ export default function AutoStrategyPanel({
       {status && (
         <>
           <SectionTitle title="Live status" />
-          <Row label="Phase">
+          <Row
+            label="Phase"
+            help="What the loop decided this cycle: charge (storing surplus), discharge (covering load), idle (nothing to do), off (disabled), or stale (no fresh meter reading)."
+          >
             <Tag minimal intent={PHASE_INTENT[status.phase] ?? Intent.NONE}>
               {status.phase}
             </Tag>
           </Row>
           <Row
             label="PV production"
+            help="Current solar production reported by the Fronius inverter."
             value={
               status.production_w === null
                 ? '—'
@@ -187,6 +222,7 @@ export default function AutoStrategyPanel({
           />
           <Row
             label="Grid injection"
+            help="Power currently exported to the grid, as seen by the Fronius meter."
             value={
               status.grid_injection_w === null
                 ? '—'

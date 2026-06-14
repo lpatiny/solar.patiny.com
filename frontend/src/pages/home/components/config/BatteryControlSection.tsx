@@ -5,14 +5,17 @@ import { useEffect, useState } from 'react';
 import AutoStrategyPanel from './AutoStrategyPanel.tsx';
 import ManualBatteryPanel from './ManualBatteryPanel.tsx';
 
+/** How the Marstek batteries are driven. */
+export type StrategyMode = 'off' | 'auto' | 'manual';
+
 /** Marstek strategy configuration as returned by `/api/strategy`. */
 export interface StrategyConfig {
-  enabled: boolean;
+  mode: StrategyMode;
   inject_target_w: number;
   charge_max_w: number;
   charge_ceiling_pct: number;
   discharge_max_w: number;
-  discharge_cover_consumption: boolean;
+  discharge_mode: 'cover' | 'force';
   discharge_floor_pct: number;
   interval_ms: number;
 }
@@ -45,11 +48,11 @@ interface StrategyResponse {
 const STATUS_POLL_MS = 5000;
 
 /**
- * Battery Control config tab. A single Automatic/Manual switch selects how the
- * Marstek batteries are driven: Automatic runs the autonomous strategy loop,
- * Manual turns the loop off and lets the operator command the batteries
- * directly. The mode is the strategy's `enabled` flag — the two are never both
- * active, so they cannot fight over the battery.
+ * Battery Control config tab. An Off/Automatic/Manual switch selects how the
+ * Marstek batteries are driven: Off disables control and releases the batteries
+ * to their own behavior, Automatic runs the autonomous strategy loop, and Manual
+ * turns the loop off and lets the operator command the batteries directly. Only
+ * one mode is ever active, so nothing fights over the battery.
  * @returns The battery-control tab.
  */
 export default function BatteryControlSection() {
@@ -107,7 +110,14 @@ export default function BatteryControlSection() {
     return <div style={{ fontSize: 12 }}>{error ?? 'Loading…'}</div>;
   }
 
-  const mode = config.enabled ? 'auto' : 'manual';
+  const mode = config.mode;
+
+  const description =
+    mode === 'auto'
+      ? 'The control loop charges from solar surplus and discharges to cover house load.'
+      : mode === 'manual'
+        ? 'The control loop is off. You command the batteries directly below.'
+        : 'Control is disabled. The batteries are released and run on their own; the app commands nothing.';
 
   return (
     <div>
@@ -125,11 +135,12 @@ export default function BatteryControlSection() {
       <SegmentedControl
         fill
         options={[
+          { label: 'Off', value: 'off' },
           { label: 'Automatic', value: 'auto' },
           { label: 'Manual', value: 'manual' },
         ]}
         value={mode}
-        onValueChange={(value) => void patch({ enabled: value === 'auto' })}
+        onValueChange={(value) => void patch({ mode: value as StrategyMode })}
       />
 
       <div
@@ -139,12 +150,10 @@ export default function BatteryControlSection() {
           margin: '8px 0 4px',
         }}
       >
-        {mode === 'auto'
-          ? 'The control loop charges from solar surplus and discharges to cover house load.'
-          : 'The control loop is off. You command the batteries directly below.'}
+        {description}
       </div>
 
-      {mode === 'auto' ? (
+      {mode === 'auto' && (
         <AutoStrategyPanel
           config={config}
           status={status}
@@ -153,9 +162,8 @@ export default function BatteryControlSection() {
           setConfig={setConfig}
           onSave={(update) => void patch(update)}
         />
-      ) : (
-        <ManualBatteryPanel />
       )}
+      {mode === 'manual' && <ManualBatteryPanel />}
     </div>
   );
 }

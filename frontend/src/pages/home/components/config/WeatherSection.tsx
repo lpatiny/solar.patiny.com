@@ -32,8 +32,16 @@ export default function WeatherSection() {
 
   return (
     <div>
-      <Row label="Stations" value="PRE (Saint-Prex) / PUY (Pully)" />
-      <Row label="Live polling" value="Every 10 min (automatic)" />
+      <Row
+        label="Stations"
+        help="MeteoSwiss stations whose measurements (sunshine, temperature) feed the production forecast and the clear-sky comparison."
+        value="PRE (Saint-Prex) / PUY (Pully)"
+      />
+      <Row
+        label="Live polling"
+        help="Current weather is fetched automatically every 10 minutes; no action needed."
+        value="Every 10 min (automatic)"
+      />
       <div
         style={{
           marginTop: 12,
