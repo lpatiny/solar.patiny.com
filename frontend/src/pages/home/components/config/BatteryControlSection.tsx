@@ -58,6 +58,7 @@ const STATUS_POLL_MS = 5000;
  */
 export default function BatteryControlSection() {
   const [config, setConfig] = useState<StrategyConfig | null>(null);
+  const [savedConfig, setSavedConfig] = useState<StrategyConfig | null>(null);
   const [status, setStatus] = useState<StrategyStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,8 +72,10 @@ export default function BatteryControlSection() {
         const data = (await res.json()) as StrategyResponse;
         if (!active) return;
         setStatus(data.status);
-        // Keep the form as-is once loaded so an edit isn't clobbered by polling.
+        // Keep the form as-is once loaded so an edit isn't clobbered by polling,
+        // but always track the persisted config so we can detect unsaved edits.
         setConfig((current) => current ?? data.config);
+        setSavedConfig(data.config);
       } catch (error_) {
         if (active) {
           setError(error_ instanceof Error ? error_.message : 'Load failed');
@@ -99,6 +102,7 @@ export default function BatteryControlSection() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as StrategyResponse;
       setConfig(data.config);
+      setSavedConfig(data.config);
       setStatus(data.status);
     } catch (error_) {
       setError(error_ instanceof Error ? error_.message : 'Save failed');
@@ -145,6 +149,7 @@ export default function BatteryControlSection() {
       {mode === 'auto' && (
         <AutoStrategyPanel
           config={config}
+          savedConfig={savedConfig}
           status={status}
           saving={saving}
           error={error}

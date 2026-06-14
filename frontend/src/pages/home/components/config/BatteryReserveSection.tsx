@@ -79,6 +79,10 @@ export default function BatteryReserveSection({
       <SaveRow
         label="Save reserve settings"
         saving={saving}
+        dirty={
+          bydReserve !== config.byd_reserve_pct ||
+          marstekReserve !== config.marstek_reserve_pct
+        }
         error={saveError}
         onSave={() => void handleSave()}
       />

@@ -24,6 +24,7 @@ const PHASE_INTENT: Record<string, Intent> = {
 
 interface AutoStrategyPanelProps {
   config: StrategyConfig;
+  savedConfig: StrategyConfig | null;
   status: StrategyStatus | null;
   saving: boolean;
   error: string | null;
@@ -36,6 +37,7 @@ interface AutoStrategyPanelProps {
  * when the Battery Control tab is in Automatic mode.
  * @param root0 - Component props.
  * @param root0.config - The current (editable) strategy configuration.
+ * @param root0.savedConfig - The persisted configuration, used to detect unsaved edits.
  * @param root0.status - The latest control-cycle status, or null before the first poll.
  * @param root0.saving - Whether a save request is in flight.
  * @param root0.error - The last error message, or null.
@@ -45,6 +47,7 @@ interface AutoStrategyPanelProps {
  */
 export default function AutoStrategyPanel({
   config,
+  savedConfig,
   status,
   saving,
   error,
@@ -53,6 +56,15 @@ export default function AutoStrategyPanel({
 }: AutoStrategyPanelProps) {
   const set = (key: keyof StrategyConfig) => (value: number) =>
     setConfig({ ...config, [key]: value });
+
+  const dirty =
+    savedConfig !== null &&
+    (config.inject_target_w !== savedConfig.inject_target_w ||
+      config.charge_max_w !== savedConfig.charge_max_w ||
+      config.charge_ceiling_pct !== savedConfig.charge_ceiling_pct ||
+      config.discharge_max_w !== savedConfig.discharge_max_w ||
+      config.discharge_mode !== savedConfig.discharge_mode ||
+      config.interval_ms !== savedConfig.interval_ms);
 
   return (
     <div>
@@ -167,6 +179,7 @@ export default function AutoStrategyPanel({
       <SaveRow
         label="Save thresholds"
         saving={saving}
+        dirty={dirty}
         error={error}
         onSave={() =>
           onSave({

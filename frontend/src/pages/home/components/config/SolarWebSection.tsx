@@ -6,7 +6,13 @@ import type { ConfigData } from '../../HomePage.tsx';
 import SolarWebLogin from './SolarWebLogin.tsx';
 import { patchConfig } from './configApi.ts';
 import { secondaryTextStyle } from './configStyles.ts';
-import { ErrorText, Row, SectionTitle, UnitNumericInput } from './configUi.tsx';
+import {
+  ErrorText,
+  Row,
+  SaveRow,
+  SectionTitle,
+  UnitNumericInput,
+} from './configUi.tsx';
 
 interface SolarWebSectionProps {
   config: ConfigData;
@@ -159,15 +165,14 @@ export default function SolarWebSection({
           stepSize={10}
         />
       </Row>
-      <div style={{ marginTop: 8 }}>
-        <Button
-          size="small"
-          loading={savingDelay}
-          onClick={() => void handleSaveDelay()}
-        >
-          Save scrape delay
-        </Button>
-      </div>
+      <SaveRow
+        label="Save scrape delay"
+        saving={savingDelay}
+        dirty={
+          scrapeDelaySec !== Math.round(config.solarweb_scrape_delay_ms / 1000)
+        }
+        onSave={() => void handleSaveDelay()}
+      />
 
       <div
         style={{

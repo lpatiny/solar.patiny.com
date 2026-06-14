@@ -108,6 +108,12 @@ export default function SolarPanelsSection({
       <SaveRow
         label="Save panel settings"
         saving={savingPanel}
+        dirty={
+          panelSurface !== config.panel_surface_m2 ||
+          panelEfficiency !== config.panel_efficiency_pct ||
+          performanceRatio !== config.panel_performance_ratio ||
+          tempCoeff !== config.panel_temp_coeff_pct_per_c
+        }
         error={panelSaveError}
         onSave={() => void handleSavePanelSettings()}
       />

@@ -138,11 +138,15 @@ export function UnitNumericInput({
 }
 
 /**
- * A primary save button with an optional inline error, laid out in the standard
- * action row used at the bottom of the config sections.
+ * A save button that reflects whether there are unsaved changes, with an
+ * optional inline error, laid out in the standard action row at the bottom of
+ * the config sections. With pending changes it is a primary (blue) button
+ * showing the action label; once everything is saved it turns into a muted,
+ * disabled "Saved ✓" so it is obvious nothing needs saving.
  * @param root0 - Component props.
- * @param root0.label - The button label.
+ * @param root0.label - The button label shown when there are pending changes.
  * @param root0.saving - Whether a save is in flight (shows the loading spinner).
+ * @param root0.dirty - Whether there are unsaved changes. Defaults to `true`.
  * @param root0.error - The last error message, or null/undefined when there is none.
  * @param root0.onSave - Called when the button is clicked.
  * @returns The save-action row.
@@ -150,11 +154,13 @@ export function UnitNumericInput({
 export function SaveRow({
   label,
   saving,
+  dirty = true,
   error,
   onSave,
 }: {
   label: string;
   saving: boolean;
+  dirty?: boolean;
   error?: string | null;
   onSave: () => void;
 }) {
@@ -163,12 +169,14 @@ export function SaveRow({
       style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}
     >
       <Button
-        intent={Intent.PRIMARY}
+        intent={dirty ? Intent.PRIMARY : Intent.NONE}
+        disabled={!dirty && !saving}
         loading={saving}
+        icon={dirty ? undefined : 'tick'}
         size="small"
         onClick={onSave}
       >
-        {label}
+        {dirty ? label : 'Saved'}
       </Button>
       {error && <ErrorText>{error}</ErrorText>}
     </div>
