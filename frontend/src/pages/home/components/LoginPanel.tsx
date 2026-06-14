@@ -54,40 +54,48 @@ export default function LoginPanel({ children }: LoginPanelProps) {
 
   if (!status.authenticated) {
     return (
-      <div style={{ maxWidth: 320, padding: '8px 0' }}>
-        <div
-          style={{
-            color: 'var(--text-secondary)',
-            fontSize: 13,
-            marginBottom: 8,
-          }}
-        >
-          Log in to change the charging speed.
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <InputGroup
-            placeholder="Username"
-            value={username}
-            onValueChange={setUsername}
-          />
-          <InputGroup
-            type="password"
-            placeholder="Password"
-            value={password}
-            onValueChange={setPassword}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submit();
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          padding: '32px 0',
+        }}
+      >
+        <div style={{ width: '100%', maxWidth: 320 }}>
+          <div
+            style={{
+              color: 'var(--text-secondary)',
+              fontSize: 13,
+              marginBottom: 8,
             }}
-          />
-          <Button
-            intent="primary"
-            loading={busy}
-            disabled={username === '' || password === ''}
-            onClick={() => void submit()}
           >
-            Log in
-          </Button>
-          {error && <Callout intent="danger">{error}</Callout>}
+            Log in to change the charging speed.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <InputGroup
+              placeholder="Username"
+              value={username}
+              onValueChange={setUsername}
+            />
+            <InputGroup
+              type="password"
+              placeholder="Password"
+              value={password}
+              onValueChange={setPassword}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void submit();
+              }}
+            />
+            <Button
+              intent="primary"
+              loading={busy}
+              disabled={username === '' || password === ''}
+              onClick={() => void submit()}
+            >
+              Log in
+            </Button>
+            {error && <Callout intent="danger">{error}</Callout>}
+          </div>
         </div>
       </div>
     );

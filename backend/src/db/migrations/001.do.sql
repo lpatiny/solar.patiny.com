@@ -111,7 +111,7 @@ CREATE INDEX idx_battery_readings_device_ts
 -- re-discovering the ble_mac when a poll fails.
 INSERT INTO devices (name, type, host, port, ble_mac, enabled, poll_interval_ms, created_at)
 VALUES
-  ('Marstek Venus E', 'marstek', '192.168.1.52', 30000, '3c1acc36ad10', 1, 60000,
+  ('Marstek 1', 'marstek', '192.168.1.52', 30000, '3c1acc36ad10', 1, 60000,
    CAST(strftime('%s', 'now') AS INTEGER)),
-  ('Marstek Venus E #2', 'marstek', '192.168.1.122', 30000, '3c1acc36a5b1', 1, 60000,
+  ('Marstek 2', 'marstek', '192.168.1.122', 30000, '3c1acc36a5b1', 1, 60000,
    CAST(strftime('%s', 'now') AS INTEGER));

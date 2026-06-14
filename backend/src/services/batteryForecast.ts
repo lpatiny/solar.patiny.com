@@ -1,10 +1,10 @@
 import { db } from '../db/Database.ts';
 
 import { getLatest } from './batteryPoller.ts';
-import { MIN_CHARGE_W } from './batteryStrategy.ts';
 import { getForecast } from './forecastService.ts';
 import { getCurrentReading } from './poller.ts';
 import { readStrategyConfig } from './strategyConfig.ts';
+import { MIN_CHARGE_W } from './strategyDecide.ts';
 
 /** One battery's identity and current charge state for the simulation. */
 export interface BatteryForecastDevice {

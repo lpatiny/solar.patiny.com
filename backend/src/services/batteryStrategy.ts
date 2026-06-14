@@ -4,8 +4,10 @@ import { getLatest } from './batteryPoller.ts';
 import type { ManualAction } from './marstekControl.ts';
 import { setMarstekUdpManual } from './marstekControl.ts';
 import { getCurrentReading } from './poller.ts';
-import type { StrategyConfig, StrategyMode } from './strategyConfig.ts';
+import type { StrategyMode } from './strategyConfig.ts';
 import { readStrategyConfig } from './strategyConfig.ts';
+import type { DeviceDecision, Phase } from './strategyDecide.ts';
+import { decide } from './strategyDecide.ts';
 
 interface Logger {
   info: (msg: string) => void;
@@ -14,26 +16,10 @@ interface Logger {
 
 /** Don't re-issue a charge setpoint unless it moves by more than this (W). */
 const SETPOINT_DEADBAND_W = 50;
-/** Minimum meaningful charge command; below it the battery is simply stopped. */
-export const MIN_CHARGE_W = 50;
-/** Minimum meaningful discharge command; below it the battery is simply stopped. */
-export const MIN_DISCHARGE_W = 50;
 /** Self-expiring countdown for a discharge command (s); the loop refreshes it. */
 const DISCHARGE_CD_S = 600;
 /** Refresh a held discharge command once it is older than this (ms). */
 const DISCHARGE_REFRESH_MS = 240_000;
-
-type Phase = 'charge' | 'discharge' | 'idle' | 'off' | 'stale';
-
-/** What the loop decided for one device this cycle. */
-export interface DeviceDecision {
-  deviceId: number;
-  name: string;
-  socPct: number | null;
-  action: ManualAction;
-  powerW: number;
-  sent: boolean;
-}
 
 /** In-memory snapshot of the most recent control cycle, for the API/UI. */
 export interface StrategyStatus {
@@ -81,139 +67,6 @@ function dischargingNow(deviceId: number): number {
 
 function socOf(deviceId: number): number | null {
   return getLatest(deviceId)?.values?.soc_pct ?? null;
-}
-
-/** A device's identity and current state, as fed to {@link decide}. */
-export interface DeviceState {
-  id: number;
-  name: string;
-  /** Current state of charge (%), or null if unknown. */
-  soc: number | null;
-  /** Charge power the device is currently drawing (W, ≥0). */
-  chargingW: number;
-  /** Discharge power the device is currently delivering (W, ≥0). */
-  dischargingW: number;
-}
-
-/**
- * Decide each enabled Marstek device's charge/discharge action for this cycle.
- * Charging takes priority: it holds grid injection at the target by storing only
- * the surplus above it (capped per battery). When there is no surplus to store,
- * the loop discharges to cover house load — capped per battery — down to the
- * floor.
- *
- * Discharge has two modes (`config.dischargeMode`):
- *
- * `cover` (the default) covers only the house load not already met by solar:
- * `consumptionW − productionW`, capped per battery. `consumptionW` is the meter's
- * true house load, so the Marstek supplies at most that post-solar deficit — it
- * never over-discharges into the grid or into the BYD's charging (no
- * battery-to-battery transfer), and solar always covers the house first.
- *
- * `force` discharges at {@link StrategyConfig.dischargeMaxW} per battery but
- * throttled so grid injection never exceeds the injection limit
- * ({@link StrategyConfig.injectTargetW}): the target is the grid balance excluding
- * the Marstek (`totalDischarging + import − injection`) plus that limit, so the
- * fleet deliberately exports up to the limit and no further. Charging from a large
- * solar surplus still takes priority in both modes, so the whole strategy honors a
- * single grid-injection ceiling. Pure function of its inputs so it can be unit-tested.
- * @param config - the resolved strategy configuration
- * @param devices - the enabled Marstek devices with their current state
- * @param injectionW - current grid injection / export (W, ≥0)
- * @param importW - current grid import (W, ≥0)
- * @param consumptionW - the meter's true house load (W). Only used in `cover`.
- * @param productionW - current PV production (W); subtracted in `cover` so only the
- * post-PV deficit is covered.
- * @returns the phase and per-device decisions
- */
-export function decide(
-  config: StrategyConfig,
-  devices: DeviceState[],
-  injectionW: number,
-  importW: number,
-  consumptionW = 0,
-  productionW = 0,
-): { phase: Phase; decisions: DeviceDecision[] } {
-  const chargeEligible = devices.filter(
-    (device) => device.soc !== null && device.soc < config.chargeCeilingPct,
-  );
-  let totalCharging = 0;
-  let totalDischarging = 0;
-  for (const device of devices) {
-    totalCharging += device.chargingW;
-    totalDischarging += device.dischargingW;
-  }
-
-  // Charge from solar surplus (priority). Add back what is already being charged
-  // to reconstruct the true exportable surplus before the batteries absorbed it.
-  const surplus = injectionW + totalCharging;
-  const chargeCap = config.chargeMaxW * chargeEligible.length;
-  const desiredCharge = Math.max(
-    0,
-    Math.min(surplus - config.injectTargetW, chargeCap),
-  );
-  const perCharge =
-    chargeEligible.length > 0
-      ? Math.min(
-          config.chargeMaxW,
-          Math.round(desiredCharge / chargeEligible.length),
-        )
-      : 0;
-  if (perCharge >= MIN_CHARGE_W) {
-    const decisions = devices.map<DeviceDecision>((device) => {
-      const canCharge =
-        device.soc !== null && device.soc < config.chargeCeilingPct;
-      return {
-        deviceId: device.id,
-        name: device.name,
-        socPct: device.soc,
-        action: canCharge ? 'charge' : 'stop',
-        powerW: canCharge ? perCharge : 0,
-        sent: false,
-      };
-    });
-    return { phase: 'charge', decisions };
-  }
-
-  // Otherwise discharge. In `cover` mode the target is the post-solar house
-  // deficit (consumptionW − production): solar covers the house first and the
-  // Marstek covers only the remainder, so it never over-discharges into the grid
-  // or the BYD's charging. In `force` mode the target is the grid balance excluding
-  // the Marstek (totalDischarging + import − injection) plus the injection limit,
-  // so the fleet runs at its rate but exports at most `injectTargetW` to the grid.
-  const dischargeEligible = devices.filter(
-    (device) => device.soc !== null && device.soc > config.dischargeFloorPct,
-  );
-  const target =
-    config.dischargeMode === 'force'
-      ? totalDischarging + importW - injectionW + config.injectTargetW
-      : consumptionW - productionW;
-  const dischargeCap = config.dischargeMaxW * dischargeEligible.length;
-  const desiredDischarge = Math.max(0, Math.min(target, dischargeCap));
-  const perDischarge =
-    dischargeEligible.length > 0
-      ? Math.min(
-          config.dischargeMaxW,
-          Math.round(desiredDischarge / dischargeEligible.length),
-        )
-      : 0;
-  const discharging = perDischarge >= MIN_DISCHARGE_W;
-
-  const decisions = devices.map<DeviceDecision>((device) => {
-    const canDischarge =
-      device.soc !== null &&
-      device.soc > config.dischargeFloorPct &&
-      discharging;
-    return {
-      deviceId: device.id,
-      name: device.name,
-      socPct: device.soc,
-      action: canDischarge ? 'discharge' : 'stop',
-      powerW: canDischarge ? perDischarge : 0,
-      sent: false,
-    };
-  });
-  return { phase: discharging ? 'discharge' : 'idle', decisions };
 }
 
 function shouldSend(decision: DeviceDecision, now: number): boolean {
@@ -320,9 +173,19 @@ async function runCycle(): Promise<void> {
     withState,
     reading.grid_injection_w,
     importW,
-    Math.max(reading.consumption_w, 0),
-    Math.max(reading.production_w, 0),
+    reading.battery_w,
   );
+
+  if (phase === 'charge' || phase === 'discharge') {
+    const marstekDischarge = withState.reduce((s, d) => s + d.dischargingW, 0);
+    const commanded = decisions.map((d) => d.powerW).join('+');
+    log.info(
+      `[strategy] ${phase}/${config.dischargeMode} pv=${Math.round(reading.production_w)}W ` +
+        `grid=+${Math.round(importW)}/-${Math.round(reading.grid_injection_w)}W ` +
+        `byd=${Math.round(reading.battery_w)}W marstekDis=${Math.round(marstekDischarge)}W ` +
+        `cons=${Math.round(reading.consumption_w)}W -> ${commanded}W`,
+    );
+  }
 
   const byId = new Map(devices.map((d) => [d.id, d]));
   await Promise.allSettled(

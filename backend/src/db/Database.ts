@@ -48,7 +48,7 @@ export class Database {
   readonly #queryWeatherReadings: TypedStatementSync<WeatherReadingRow>;
 
   private constructor(dbPath: string, sqlite: DatabaseSync) {
-    this.#slowQueryLog = join(dirname(dbPath), '..', 'slow-queries.log');
+    this.#slowQueryLog = join(dirname(dbPath), 'slow-queries.log');
     this.#sqlite = sqlite;
 
     this.#insertReading = this.#prepare<ReadingRow>(
@@ -607,5 +607,5 @@ export class Database {
 }
 
 export const db = await Database.open(
-  join(import.meta.dirname, '../../../data/sqlite3/solar.db'),
+  join(import.meta.dirname, '../../../data/sqlite/db.sqlite'),
 );
