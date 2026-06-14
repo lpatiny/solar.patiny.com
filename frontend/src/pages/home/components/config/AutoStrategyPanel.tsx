@@ -101,7 +101,7 @@ export default function AutoStrategyPanel({
           rightElement={<span style={unitStyle}>W</span>}
         />
       </Row>
-      <Row label="Cap discharge to house consumption">
+      <Row label="Cover house load (Marstek first)">
         <Switch
           checked={config.discharge_cover_consumption}
           alignIndicator="right"
@@ -122,8 +122,8 @@ export default function AutoStrategyPanel({
         }}
       >
         {config.discharge_cover_consumption
-          ? 'On: discharge enough to power the whole house, even while solar is still exporting to the grid — battery output is capped at house consumption.'
-          : 'Off: discharge only to offset what you would otherwise buy from the grid — any solar export to the grid stops it.'}
+          ? 'On (Marstek priority): the Marstek batteries cover the house load (after solar, capped per battery) so they empty first and the BYD only supplies what they cannot.'
+          : 'Off: discharge only to offset net grid import — whatever else covers the load (the BYD) wins, so the Marstek may stay idle.'}
       </div>
       <Row
         label="Stop discharging at"

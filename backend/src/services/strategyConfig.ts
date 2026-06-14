@@ -44,11 +44,12 @@ export interface StrategyConfig {
    */
   dischargeMaxW: number;
   /**
-   * Drive discharge from total house consumption instead of net grid import.
-   * When `false` (default) the loop only discharges to offset grid import, so any
-   * grid injection stops it. When `true` it discharges to cover the full house
-   * load — capped per battery — even while PV is still exporting to the grid.
-   * @default false
+   * Marstek-priority discharge: cover the house consumption before the BYD does.
+   * When `true` (default) the loop discharges to cover the reconstructed post-PV
+   * house load — capped per battery — so the Marstek empties first and the BYD
+   * only supplies what the Marstek cannot. When `false` it only offsets net grid
+   * import, so the BYD effectively wins.
+   * @default true
    */
   dischargeCoverConsumption: boolean;
   /**
@@ -82,7 +83,7 @@ const DEFAULTS = {
   chargeMaxW: 500,
   chargeCeilingPct: 100,
   dischargeMaxW: 400,
-  dischargeCoverConsumption: false,
+  dischargeCoverConsumption: true,
   intervalMs: 30_000,
 } as const;
 

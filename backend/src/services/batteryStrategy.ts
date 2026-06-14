@@ -102,25 +102,30 @@ export interface DeviceState {
  * the loop discharges to cover house load — capped per battery — down to the
  * floor.
  *
- * The discharge is always clamped at the "no export" ceiling: the batteries' own
- * current output plus the net grid balance (import − injection). The Fronius meter
- * cannot see the Marstek batteries as a power source, so once they discharge its
- * reported consumption is corrupted and cannot distinguish real house load from a
- * battery over-discharge feeding the grid. The signed grid balance is therefore the
- * only reliable brake, and discharging past this ceiling is exactly what pushes
- * power onto the grid. By default the loop only offsets net grid import; when
- * `config.dischargeCoverConsumption` is set it instead targets the true house load,
- * reconstructed from the non-Marstek generation, so it also stops short of
- * discharging into the BYD battery's own charging — but never past the no-export
- * ceiling, so it can never feed the grid. Pure function of its inputs so it can be
- * unit-tested.
+ * Cover-consumption mode (`config.dischargeCoverConsumption`, the Marstek-priority
+ * behavior) makes the Marstek batteries supply the house load before the BYD does.
+ * The Fronius meter cannot see the Marstek as a source, so a Marstek discharge
+ * looks like reduced import: the meter reports `consumptionW = trueLoad −
+ * marstekDischarge`. The true load is therefore reconstructed as `consumptionW +
+ * totalDischarging`, and PV production is subtracted so the batteries cover only
+ * the deficit and never export the panels. There is deliberately NO grid-balance
+ * clamp: Marstek alone covers at most the load, so it can never feed the grid by
+ * itself — only the BYD can, transiently, until it backs off, which is exactly how
+ * Marstek takes priority and the BYD empties only for what Marstek cannot cover
+ * (load above the per-battery cap, or once Marstek hits its floor).
+ *
+ * The conservative net-grid mode (flag off) instead only offsets net grid import
+ * (`totalDischarging + import − injection`), so any other source covering the load
+ * — the BYD — wins. Pure function of its inputs so it can be unit-tested.
  * @param config - the resolved strategy configuration
  * @param devices - the enabled Marstek devices with their current state
  * @param injectionW - current grid injection / export (W, ≥0)
  * @param importW - current grid import (W, ≥0)
- * @param otherGenerationW - current non-Marstek generation feeding the house (PV
- * plus BYD net discharge, W; negative when the BYD is charging); only used when
- * `config.dischargeCoverConsumption` is set
+ * @param consumptionW - Fronius-reported house consumption (W); equals the true
+ * house load minus the Marstek discharge the meter cannot see. Only used in
+ * cover-consumption mode.
+ * @param productionW - current PV production (W); subtracted in cover-consumption
+ * mode so only the post-PV deficit is covered.
  * @returns the phase and per-device decisions
  */
 export function decide(
@@ -128,7 +133,8 @@ export function decide(
   devices: DeviceState[],
   injectionW: number,
   importW: number,
-  otherGenerationW = 0,
+  consumptionW = 0,
+  productionW = 0,
 ): { phase: Phase; decisions: DeviceDecision[] } {
   const chargeEligible = devices.filter(
     (device) => device.soc !== null && device.soc < config.chargeCeilingPct,
@@ -171,26 +177,20 @@ export function decide(
     return { phase: 'charge', decisions };
   }
 
-  // Otherwise cover house load, load-following, but never feed the grid. The net
-  // grid balance plus what the batteries already discharge is the most the fleet
-  // can supply before it starts exporting — the hard "no export" ceiling. By
-  // default the target is exactly that ceiling (offset grid import only). When
-  // covering consumption the target is the true house load, reconstructed by
-  // adding the non-Marstek generation to the ceiling, so the batteries also stop
-  // short of charging the BYD battery; it is still clamped at the ceiling so it
-  // can never push power onto the grid.
+  // Otherwise cover the house load. In cover-consumption (Marstek-priority) mode
+  // the target is the reconstructed post-PV deficit: trueLoad − PV, where
+  // trueLoad = consumptionW + the Marstek discharge the meter cannot see. Marstek
+  // alone never exceeds the load, so it cannot export by itself; the BYD empties
+  // only for what Marstek cannot cover. In net-grid mode the target is just the
+  // net grid import (plus what the batteries already supply), so the BYD wins.
   const dischargeEligible = devices.filter(
     (device) => device.soc !== null && device.soc > config.dischargeFloorPct,
   );
-  const noExportCeiling = totalDischarging + importW - injectionW;
   const target = config.dischargeCoverConsumption
-    ? otherGenerationW + noExportCeiling
-    : noExportCeiling;
+    ? consumptionW + totalDischarging - productionW
+    : totalDischarging + importW - injectionW;
   const dischargeCap = config.dischargeMaxW * dischargeEligible.length;
-  const desiredDischarge = Math.max(
-    0,
-    Math.min(target, noExportCeiling, dischargeCap),
-  );
+  const desiredDischarge = Math.max(0, Math.min(target, dischargeCap));
   const perDischarge =
     dischargeEligible.length > 0
       ? Math.min(
@@ -317,6 +317,7 @@ async function runCycle(): Promise<void> {
     reading.grid_injection_w,
     importW,
     Math.max(reading.consumption_w, 0),
+    Math.max(reading.production_w, 0),
   );
 
   const byId = new Map(devices.map((d) => [d.id, d]));
