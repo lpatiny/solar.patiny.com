@@ -2,6 +2,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
 
+import { requireAuth } from '../auth.ts';
 import { db } from '../db/Database.ts';
 import { syncWeatherHistory } from '../services/weatherSyncService.ts';
 
@@ -50,6 +51,7 @@ const weatherRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.post(
     '/api/weather/sync',
     {
+      preHandler: requireAuth,
       schema: {
         response: {
           200: Type.Object({

@@ -3,6 +3,8 @@ interface PowerFlowCardProps {
   gridW: number;
   batteryW: number;
   consumptionW: number;
+  /** Combined energy currently stored across all batteries, in kWh. */
+  totalStoredKwh?: number;
   isStale: boolean;
 }
 
@@ -54,6 +56,7 @@ export default function PowerFlowCard({
   gridW,
   batteryW,
   consumptionW,
+  totalStoredKwh,
   isStale,
 }: PowerFlowCardProps) {
   const isExporting = gridW < 0;
@@ -96,6 +99,11 @@ export default function PowerFlowCard({
           color="var(--battery)"
           label={isCharging ? 'Battery charging' : 'Battery discharging'}
           value={formatW(Math.abs(batteryW))}
+          sub={
+            totalStoredKwh === undefined
+              ? undefined
+              : `${totalStoredKwh.toFixed(1)} kWh stored`
+          }
         />
       </div>
     </div>

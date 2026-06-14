@@ -3,6 +3,61 @@ export interface AuthStatus {
   username: string | null;
 }
 
+interface StoredCredentials {
+  username: string;
+  password: string;
+}
+
+const CREDENTIALS_KEY = 'solar-auth';
+
+/**
+ * Reads the credentials saved on the last successful login, if any. They are
+ * used to transparently re-establish a session after the server-side session
+ * store is cleared (e.g. a backend restart) so the user is not asked to log in
+ * again on every reload.
+ * @returns The stored credentials, or `null` when none are saved.
+ */
+export function loadStoredCredentials(): StoredCredentials | null {
+  try {
+    const raw = localStorage.getItem(CREDENTIALS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredCredentials>;
+    if (
+      typeof parsed.username !== 'string' ||
+      typeof parsed.password !== 'string'
+    ) {
+      return null;
+    }
+    return { username: parsed.username, password: parsed.password };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persists the credentials used for the current session so the session can be
+ * re-established automatically after a reload or backend restart.
+ * @param credentials - The credentials to store.
+ */
+export function storeCredentials(credentials: StoredCredentials): void {
+  try {
+    localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(credentials));
+  } catch {
+    // Best-effort: ignore quota/availability errors.
+  }
+}
+
+/**
+ * Removes any saved credentials (called on logout).
+ */
+export function clearStoredCredentials(): void {
+  try {
+    localStorage.removeItem(CREDENTIALS_KEY);
+  } catch {
+    // Best-effort: ignore availability errors.
+  }
+}
+
 /**
  * Returns the current authentication status from the session cookie.
  * @returns The authentication status.

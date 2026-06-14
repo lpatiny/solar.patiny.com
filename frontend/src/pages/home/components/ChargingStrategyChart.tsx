@@ -1,6 +1,12 @@
 import { ResponsiveLine } from '@nivo/line';
 import { useEffect, useState } from 'react';
 
+import { batteryColor } from './batteryChargeSeries.ts';
+import { useBatteryCharge } from './useBatteryCharge.ts';
+import { useHomeBatterySoc } from './useHomeBatterySoc.ts';
+
+const BYD_COLOR = '#818cf8';
+
 interface MeteoReading {
   timestamp: number;
   temperatureC: number | null;
@@ -127,23 +133,6 @@ function MixedLineLayer({ series, lineGenerator }: MixedLineLayerProps) {
       />
     );
   });
-}
-
-function ForecastDotsLayer({ series }: { series: NivoLineSerie[] }) {
-  return series
-    .filter((s) => s.id.endsWith('_forecast'))
-    .flatMap((serie, si) =>
-      serie.data.map((d, di) => (
-        <circle
-          key={`${si}-${di}`}
-          cx={d.position.x}
-          cy={d.position.y}
-          r={4}
-          fill={serie.color}
-          opacity={0.8}
-        />
-      )),
-    );
 }
 
 // Tick values at 3-hour boundaries for a full day
@@ -276,14 +265,23 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
   todayMidnight.setHours(0, 0, 0, 0);
   const midnightTs = Math.floor(todayMidnight.getTime() / 1000);
 
-  // Build slot-boundary points for power/SoC charts
+  // Measured SoC of each physical battery for today, polled live.
+  const { batteries, historyById } = useBatteryCharge(
+    midnightTs,
+    midnightTs + 86_400,
+    true,
+  );
+
+  // BYD home battery SOC comes from the aggregated electrical readings, not the
+  // per-device history, so it is loaded separately.
+  const bydSoc = useHomeBatterySoc(midnightTs, midnightTs + 86_400, true);
+
+  // Build slot-boundary points for the power chart
   const points: Array<{
     xMs: number;
     productionW: number;
     chargeW: number;
     exportW: number;
-    socPct: number;
-    isPast: boolean;
   }> = [];
 
   for (const slot of data.slots) {
@@ -296,8 +294,6 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
       productionW: prodW,
       chargeW,
       exportW,
-      socPct: slot.batterySocStartPct,
-      isPast: slot.isPast,
     });
   }
   const lastSlot = data.slots.at(-1);
@@ -307,8 +303,6 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
       productionW: 0,
       chargeW: 0,
       exportW: 0,
-      socPct: lastSlot.batterySocEndPct,
-      isPast: lastSlot.isPast,
     });
   }
 
@@ -330,21 +324,26 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
     },
   ];
 
-  // SOC: actual measured (solid) + projected (dashed with dots)
-  const socActualPts = points
-    .filter((p) => p.isPast)
-    .map((p) => ({ x: p.xMs, y: Math.round(p.socPct) }));
-  const bridgePt = socActualPts.at(-1);
-  const futureSocPts = points
-    .filter((p) => !p.isPast)
-    .map((p) => ({ x: p.xMs, y: Math.round(p.socPct) }));
-  const socForecastPts = bridgePt ? [bridgePt, ...futureSocPts] : futureSocPts;
+  // One solid measured SOC line per battery (distinct colors): the BYD home
+  // battery plus each physical Marstek device.
+  const batterySocLines = batteries.map((battery, index) => ({
+    id: `bat_${battery.id}`,
+    color: batteryColor(index),
+    data: (historyById[battery.id] ?? [])
+      .filter(
+        (point) => point.soc_pct !== null && point.timestamp * 1000 <= nowMs,
+      )
+      .map((point) => ({
+        x: point.timestamp * 1000,
+        y: Math.round(point.soc_pct ?? 0),
+      })),
+  }));
 
   const socLines = [
-    { id: 'soc_actual', color: '#22d3ee', data: socActualPts },
-    ...(socForecastPts.length > 0
-      ? [{ id: 'soc_forecast', color: '#22d3ee', data: socForecastPts }]
+    ...(bydSoc.length > 0
+      ? [{ id: 'bat_byd', color: BYD_COLOR, data: bydSoc }]
       : []),
+    ...batterySocLines,
   ];
 
   // Panel power: actual measured (solid) + predicted (dashed) + clear-sky (dashed, lighter)
@@ -493,10 +492,27 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
         />
       </div>
 
-      {/* SoC projection */}
+      {/* Measured battery SoC */}
       <span className="card-title" style={{ marginTop: 16 }}>
-        Battery SoC Projection
+        Battery SoC
       </span>
+      <div
+        style={{
+          color: 'var(--text-secondary)',
+          display: 'flex',
+          flexWrap: 'wrap',
+          fontSize: 10,
+          gap: 12,
+          marginBottom: 4,
+        }}
+      >
+        <span style={{ color: BYD_COLOR }}>— BYD</span>
+        {batteries.map((battery, index) => (
+          <span key={battery.id} style={{ color: batteryColor(index) }}>
+            — {battery.name}
+          </span>
+        ))}
+      </div>
       <div style={{ height: 120 }}>
         <ResponsiveLine
           data={socLines}
@@ -533,7 +549,6 @@ function TodayStrategyChart({ data }: { data: ForecastData }) {
             'markers',
             'axes',
             MixedLineLayer as unknown as NivoLayer,
-            ForecastDotsLayer as unknown as NivoLayer,
             'crosshair',
             'mesh',
           ]}

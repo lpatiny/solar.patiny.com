@@ -1,26 +1,32 @@
 import { Icon } from '@blueprintjs/core';
-import { useEffect, useState } from 'react';
 
 import type { Device, DeviceLive } from '../../../types.ts';
 
 import BatteryCell from './BatteryCell.tsx';
-import { batteryFlow, deviceCellData, formatPower } from './batteryStatus.ts';
+import {
+  batteryFlow,
+  deviceCellData,
+  formatPower,
+  usableBattery,
+} from './batteryStatus.ts';
 
 interface BatteriesSummaryProps {
   homeSoc: number;
   homePowerW: number;
   homeHost: string | null;
   homeCapacityKwh: number;
+  homeReservePct: number;
+  marstekReservePct: number;
   homeOffline: boolean;
+  devices: Device[];
+  liveById: Record<number, DeviceLive>;
   onOpen: () => void;
 }
 
-const POLL_MS = 5_000;
-
 const TOTAL_FLOW_VISUAL = {
-  charging: { icon: 'arrow-up', color: '#34d399' },
-  discharging: { icon: 'arrow-down', color: '#f87171' },
-  idle: { icon: 'arrows-horizontal', color: '#fbbf24' },
+  charging: { icon: 'arrow-up', color: '#34d399', label: 'Charging' },
+  discharging: { icon: 'arrow-down', color: '#f87171', label: 'Discharging' },
+  idle: { icon: 'arrows-horizontal', color: '#fbbf24', label: 'Idle' },
 } as const;
 
 /**
@@ -32,7 +38,11 @@ const TOTAL_FLOW_VISUAL = {
  * @param root0.homePowerW - Home battery power in watts (negative = charging).
  * @param root0.homeHost - Home battery IP/host, or null.
  * @param root0.homeCapacityKwh - Home battery capacity in kWh.
+ * @param root0.homeReservePct - BYD reserve floor in percent, hidden from display.
+ * @param root0.marstekReservePct - Marstek reserve floor in percent, hidden from display.
  * @param root0.homeOffline - Whether the home battery reading is stale.
+ * @param root0.devices - The configured Marstek devices.
+ * @param root0.liveById - Latest live snapshot per device id.
  * @param root0.onOpen - Called when a Marstek cell is clicked.
  * @returns The grouped batteries tile.
  */
@@ -41,58 +51,28 @@ export default function BatteriesSummary({
   homePowerW,
   homeHost,
   homeCapacityKwh,
+  homeReservePct,
+  marstekReservePct,
   homeOffline,
+  devices,
+  liveById,
   onOpen,
 }: BatteriesSummaryProps) {
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [liveById, setLiveById] = useState<Record<number, DeviceLive>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/devices')
-      .then((r) => (r.ok ? r.json() : []))
-      .then((rows: Device[]) => {
-        if (!cancelled) setDevices(rows);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (devices.length === 0) return undefined;
-    let cancelled = false;
-    function loadDevice(device: Device) {
-      fetch(`/api/devices/${device.id}/live`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data: DeviceLive | null) => {
-          if (!cancelled && data) {
-            setLiveById((prev) => ({ ...prev, [device.id]: data }));
-          }
-        })
-        .catch(() => undefined);
-    }
-    function load() {
-      for (const device of devices) loadDevice(device);
-    }
-    load();
-    const timer = setInterval(load, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [devices]);
-
-  let totalStored = (homeSoc / 100) * homeCapacityKwh;
-  let totalCapacity = homeCapacityKwh;
+  const home = usableBattery(homeSoc, homeCapacityKwh, homeReservePct);
+  let totalStored = ((home.soc ?? 0) / 100) * (home.capacityKwh ?? 0);
+  let totalCapacity = home.capacityKwh ?? 0;
   let netPowerW = homePowerW;
   for (const device of devices) {
     const values = liveById[device.id]?.values;
     if (!values) continue;
     if (values.energy_kwh !== null && values.soc_pct !== null) {
-      totalStored += (values.soc_pct / 100) * values.energy_kwh;
-      totalCapacity += values.energy_kwh;
+      const usable = usableBattery(
+        values.soc_pct,
+        values.energy_kwh,
+        marstekReservePct,
+      );
+      totalStored += ((usable.soc ?? 0) / 100) * (usable.capacityKwh ?? 0);
+      totalCapacity += usable.capacityKwh ?? 0;
     }
     if (values.ac_power_w !== null) netPowerW += values.ac_power_w;
   }
@@ -119,7 +99,8 @@ export default function BatteriesSummary({
         <div style={{ alignItems: 'center', display: 'flex', gap: 12 }}>
           <div style={{ textAlign: 'right' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
-              Total stored {netFlow !== 'idle' && `· ${formatPower(netWatts)}`}
+              {totalVisual.label}
+              {netFlow !== 'idle' && ` · ${formatPower(netWatts)}`}
             </div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>
               {totalStored.toFixed(1)} / {totalCapacity.toFixed(1)} kWh
@@ -134,25 +115,30 @@ export default function BatteriesSummary({
           name="BYD"
           statusLabel={homeOffline ? 'offline' : 'online'}
           offline={homeOffline}
-          soc={homeSoc}
+          soc={home.soc}
           flow={homeFlow.flow}
           watts={homeFlow.watts}
           subtitle={homeHost}
-          capacityKwh={homeCapacityKwh}
+          capacityKwh={home.capacityKwh}
         />
         {devices.map((device) => {
           const data = deviceCellData(device, liveById[device.id] ?? null);
+          const usable = usableBattery(
+            data.soc,
+            data.capacityKwh,
+            marstekReservePct,
+          );
           return (
             <BatteryCell
               key={device.id}
               name={device.name}
               statusLabel={data.statusLabel}
               offline={data.offline}
-              soc={data.soc}
+              soc={usable.soc}
               flow={data.flow}
               watts={data.watts}
               subtitle={data.subtitle}
-              capacityKwh={data.capacityKwh}
+              capacityKwh={usable.capacityKwh}
               onClick={onOpen}
             />
           );

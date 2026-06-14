@@ -61,11 +61,82 @@ body {
   margin-top: 0 !important;
 }
 
+/* Configuration: vertical sub-tabs rendered as a distinct side menu */
+.config-tabs {
+  gap: 20px;
+}
+
+.config-tabs .bp6-tab-list {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px !important;
+  min-width: 150px;
+}
+
+.config-tabs .bp6-tab {
+  border-radius: 6px;
+  color: var(--text-secondary) !important;
+  font-size: 13px !important;
+  padding: 6px 12px !important;
+}
+
+.config-tabs .bp6-tab:hover {
+  background: rgb(255 255 255 / 4%);
+  color: var(--text) !important;
+}
+
+.config-tabs .bp6-tab[aria-selected='true'] {
+  background: rgb(96 165 250 / 18%);
+  color: var(--text) !important;
+}
+
+/* The selected-tab indicator bar is redundant with the filled background */
+.config-tabs .bp6-tab-indicator-wrapper {
+  display: none !important;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
+}
+
+/* Power-flow diagram: static wires and the flowing dots animated along them. */
+.pf-wire {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 3;
+}
+
+.pf-flow {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 2 14;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.pf-flow-out {
+  animation-name: pf-flow-out;
+}
+
+.pf-flow-in {
+  animation-name: pf-flow-in;
+}
+
+@keyframes pf-flow-out {
+  to {
+    stroke-dashoffset: -160;
+  }
+}
+
+@keyframes pf-flow-in {
+  to {
+    stroke-dashoffset: 160;
+  }
 }
 
 .card-title {

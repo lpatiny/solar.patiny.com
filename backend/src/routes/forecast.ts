@@ -3,6 +3,7 @@ import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
 
 import { db } from '../db/Database.ts';
+import { getBatteryForecast } from '../services/batteryForecast.ts';
 import {
   computeChargingProfileFromReadings,
   getForecast,
@@ -70,6 +71,49 @@ const forecastRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
       const current = getCurrentReading();
       const currentSocPct = current?.battery_soc ?? 50;
       return getForecast(currentSocPct);
+    },
+  );
+
+  fastify.get(
+    '/api/forecast/batteries',
+    {
+      schema: {
+        tags: ['forecast'],
+        summary: 'Per-battery predicted charge power for the remaining slots',
+        response: {
+          200: Type.Object({
+            series: Type.Array(
+              Type.Object({
+                device_id: Type.Number(),
+                name: Type.String(),
+                slots: Type.Array(
+                  Type.Object({
+                    timestamp: Type.Number(),
+                    end_timestamp: Type.Number(),
+                    charge_w: Type.Number(),
+                    soc_end_pct: Type.Number(),
+                  }),
+                ),
+              }),
+            ),
+          }),
+        },
+      },
+    },
+    async () => {
+      const series = await getBatteryForecast();
+      return {
+        series: series.map((entry) => ({
+          device_id: entry.deviceId,
+          name: entry.name,
+          slots: entry.slots.map((slot) => ({
+            timestamp: slot.timestamp,
+            end_timestamp: slot.endTimestamp,
+            charge_w: slot.chargeW,
+            soc_end_pct: slot.socEndPct,
+          })),
+        })),
+      };
     },
   );
 

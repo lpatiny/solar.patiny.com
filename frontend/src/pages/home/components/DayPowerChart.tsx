@@ -1,42 +1,23 @@
-/* eslint-disable @typescript-eslint/naming-convention -- API response fields use snake_case */
 import { Button, ButtonGroup } from '@blueprintjs/core';
 import { ResponsiveLine } from '@nivo/line';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import type { NivoComputedSerie } from './BrushLayer.tsx';
 import { BrushLayer } from './BrushLayer.tsx';
-
-interface ReadingPoint {
-  timestamp: number;
-  production_w: number;
-  grid_w: number;
-  battery_w: number;
-  consumption_w: number;
-  battery_soc_max: number | null;
-}
-
-interface ForecastSlot {
-  timestamp: number;
-  endTimestamp: number;
-  predictedProductionKwh: number;
-  typicalConsumptionKwh: number;
-  neighborExportKwh: number;
-  batteryChargeKwh: number;
-  isPast: boolean;
-}
-
-interface ForecastData {
-  slots: ForecastSlot[];
-}
-
-interface NivoLineSerie {
-  id: string;
-  color: string;
-  data: Array<{ position: { x: number; y: number } }>;
-}
+import { batteryColor } from './batteryChargeSeries.ts';
+import type { ForecastData, ReadingPoint } from './powerBalanceSeries.ts';
+import {
+  buildPowerBalanceSeries,
+  buildSolarForecastSeries,
+} from './powerBalanceSeries.ts';
+import { useBatteryCharge } from './useBatteryCharge.ts';
 
 type NivoLayer = NonNullable<
   Parameters<typeof ResponsiveLine>[0]['layers']
 >[number];
+
+// How often the live (today) reading and battery-charge series re-poll.
+const LIVE_POLL_MS = 30_000;
 
 const nivoTheme = {
   background: 'transparent',
@@ -62,17 +43,11 @@ const nivoTheme = {
   },
 };
 
-const POWER_SERIES_META = [
-  { id: 'Solar', color: '#fbbf24' },
-  { id: 'Consumption', color: '#c084fc' },
-  { id: 'Grid injection', color: '#34d399' },
-] as const;
-
 function MixedLineLayer({
   series,
   lineGenerator,
 }: {
-  series: NivoLineSerie[];
+  series: NivoComputedSerie[];
   lineGenerator: (points: Array<{ x: number; y: number }>) => string | null;
 }) {
   return series.map((serie) => {
@@ -94,7 +69,7 @@ function MixedLineLayer({
   });
 }
 
-function ForecastDotsLayer({ series }: { series: NivoLineSerie[] }) {
+function ForecastDotsLayer({ series }: { series: NivoComputedSerie[] }) {
   return series
     .filter((s) => s.id.endsWith('_forecast'))
     .flatMap((serie, si) =>
@@ -144,50 +119,12 @@ function formatTickMs(ms: number): string {
   });
 }
 
-function buildForecastSeries(
-  data: ReadingPoint[],
-  forecast: ForecastData,
-): Array<{ id: string; color: string; data: Array<{ x: number; y: number }> }> {
-  const futureSlots = forecast.slots.filter((s) => !s.isPast);
-  if (futureSlots.length === 0) return [];
-
-  const last = data.at(-1);
-  const solar: Array<{ x: number; y: number }> = last
-    ? [{ x: last.timestamp * 1000, y: Math.round(last.production_w) }]
-    : [];
-  const consumption: Array<{ x: number; y: number }> = last
-    ? [{ x: last.timestamp * 1000, y: Math.round(last.consumption_w) }]
-    : [];
-  const injection: Array<{ x: number; y: number }> = last
-    ? [
-        {
-          x: last.timestamp * 1000,
-          y: last.grid_w < 0 ? Math.round(-last.grid_w) : 0,
-        },
-      ]
-    : [];
-
-  for (const slot of futureSlots) {
-    const midMs = ((slot.timestamp + slot.endTimestamp) / 2) * 1000;
-    solar.push({
-      x: midMs,
-      y: Math.round((slot.predictedProductionKwh / 3) * 1000),
-    });
-    consumption.push({
-      x: midMs,
-      y: Math.round((slot.typicalConsumptionKwh / 3) * 1000),
-    });
-    injection.push({
-      x: midMs,
-      y: Math.round((slot.neighborExportKwh / 3) * 1000),
-    });
-  }
-
-  return [
-    { id: 'Solar_forecast', color: '#fbbf24', data: solar },
-    { id: 'Consumption_forecast', color: '#c084fc', data: consumption },
-    { id: 'Grid injection_forecast', color: '#34d399', data: injection },
-  ];
+/**
+ * Round a watt magnitude up to a clean 500 W step, with a 500 W floor.
+ * @param value
+ */
+function niceAxisMax(value: number): number {
+  return Math.max(500, Math.ceil(value / 500) * 500);
 }
 
 export default function DayPowerChart() {
@@ -220,31 +157,53 @@ export default function DayPowerChart() {
 
   useEffect(() => {
     setZoomRange(null);
+    let cancelled = false;
     const { from, to } = dayBounds(selectedDate);
-    fetch(`/api/history?resolution=raw&from=${from}&to=${to}`)
-      .then((r) => r.json())
-      .then((rows) => setData(rows as ReadingPoint[]))
-      .catch(() => setData([]));
-  }, [selectedDate]);
+    const load = () =>
+      fetch(`/api/history?resolution=raw&from=${from}&to=${to}`)
+        .then((r) => r.json())
+        .then((rows) => {
+          if (!cancelled) setData(rows as ReadingPoint[]);
+        })
+        .catch(() => {
+          if (!cancelled) setData([]);
+        });
+    void load();
+    // Today's readings keep accumulating, so re-poll to keep the graph live.
+    // Past days are immutable, so no interval is started for them.
+    const interval = isToday
+      ? setInterval(() => void load(), LIVE_POLL_MS)
+      : undefined;
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [selectedDate, isToday]);
 
   useEffect(() => {
     if (!isToday) {
       setForecast(null);
       return;
     }
-    fetch('/api/forecast')
-      .then((r) => r.json())
-      .then((d) => setForecast(d as ForecastData))
-      .catch(() => setForecast(null));
-
-    const interval = setInterval(() => {
+    const load = () =>
       fetch('/api/forecast')
         .then((r) => r.json())
         .then((d) => setForecast(d as ForecastData))
         .catch(() => undefined);
-    }, 10 * 60_000);
+    void load();
+    const interval = setInterval(() => void load(), 10 * 60_000);
     return () => clearInterval(interval);
   }, [isToday]);
+
+  const { from: dayFrom, to: dayTo } = useMemo(
+    () => dayBounds(selectedDate),
+    [selectedDate],
+  );
+  const { batteries, historyById: batteryHistoryById } = useBatteryCharge(
+    dayFrom,
+    dayTo,
+    isToday,
+  );
 
   const midnightMs = useMemo(() => {
     const d = new Date(selectedDate);
@@ -271,20 +230,15 @@ export default function DayPowerChart() {
 
   const resetZoom = useCallback(() => setZoomRange(null), []);
 
-  const visibleData = useMemo(
+  const { series: balanceSeries, yMax: balanceYMax } = useMemo(
     () =>
-      zoomRange
-        ? data.filter((p) => {
-            const ms = p.timestamp * 1000;
-            return ms >= zoomRange.startMs && ms <= zoomRange.endMs;
-          })
-        : data,
-    [data, zoomRange],
+      buildPowerBalanceSeries(data, batteries, batteryHistoryById, zoomRange),
+    [data, batteries, batteryHistoryById, zoomRange],
   );
 
   const forecastSeries = useMemo(() => {
     if (!isToday || !forecast) return [];
-    const series = buildForecastSeries(data, forecast);
+    const series = buildSolarForecastSeries(data, forecast);
     if (!zoomRange) return series;
     return series.map((s) => {
       const filtered = s.data.filter(
@@ -298,6 +252,47 @@ export default function DayPowerChart() {
     });
   }, [isToday, forecast, data, zoomRange]);
 
+  const axisMax = useMemo(() => {
+    let raw = balanceYMax;
+    for (const serie of forecastSeries) {
+      for (const point of serie.data) {
+        const magnitude = Math.abs(point.y);
+        if (magnitude > raw) raw = magnitude;
+      }
+    }
+    return niceAxisMax(raw);
+  }, [balanceYMax, forecastSeries]);
+
+  const yTickValues = useMemo(
+    () => [-axisMax, -axisMax / 2, 0, axisMax / 2, axisMax],
+    [axisMax],
+  );
+
+  const allSeries = useMemo(
+    () => [
+      ...balanceSeries.filter((s) => !hiddenIds.has(s.id)),
+      ...forecastSeries.filter(
+        (s) => !hiddenIds.has(s.id.replace('_forecast', '')),
+      ),
+    ],
+    [balanceSeries, forecastSeries, hiddenIds],
+  );
+
+  const seriesMeta = useMemo(
+    () => [
+      { id: 'Solar', label: 'Solar', color: '#fbbf24' },
+      { id: 'Grid', label: 'Grid', color: '#34d399' },
+      { id: 'BYD', label: 'BYD', color: '#818cf8' },
+      ...batteries.map((battery, index) => ({
+        id: `Battery ${battery.name}`,
+        label: battery.name,
+        color: batteryColor(index),
+      })),
+      { id: 'Consumption', label: 'Consumption', color: '#c084fc' },
+    ],
+    [batteries],
+  );
+
   const xMin = zoomRange ? zoomRange.startMs : midnightMs;
   const xMax = zoomRange ? zoomRange.endMs : nextMidnightMs;
 
@@ -307,70 +302,48 @@ export default function DayPowerChart() {
     [ticks, xMin, xMax],
   );
 
-  const actualSeries = useMemo(
-    () => [
+  const markers = useMemo(() => {
+    const zeroLine = {
+      axis: 'y' as const,
+      value: 0,
+      lineStyle: { stroke: '#64748b', strokeWidth: 1 },
+    };
+    if (!isToday) return [zeroLine];
+    return [
+      zeroLine,
       {
-        id: 'Solar',
-        color: '#fbbf24',
-        data: visibleData.map((p) => ({
-          x: p.timestamp * 1000,
-          y: Math.round(p.production_w),
-        })),
-      },
-      {
-        id: 'Consumption',
-        color: '#c084fc',
-        data: visibleData.map((p) => ({
-          x: p.timestamp * 1000,
-          y: Math.round(p.consumption_w),
-        })),
-      },
-      {
-        id: 'Grid injection',
-        color: '#34d399',
-        data: visibleData.map((p) => ({
-          x: p.timestamp * 1000,
-          y: p.grid_w < 0 ? Math.round(-p.grid_w) : 0,
-        })),
-      },
-    ],
-    [visibleData],
-  );
-
-  const allSeries = useMemo(
-    () => [
-      ...actualSeries.filter((s) => !hiddenIds.has(s.id)),
-      ...forecastSeries.filter(
-        (s) => !hiddenIds.has(s.id.replace('_forecast', '')),
-      ),
-    ],
-    [actualSeries, forecastSeries, hiddenIds],
-  );
-
-  const nowMarker = isToday
-    ? [
-        {
-          axis: 'x' as const,
-          value: Date.now(),
-          lineStyle: {
-            stroke: '#94a3b8',
-            strokeWidth: 1,
-            strokeDasharray: '4,3',
-          },
+        axis: 'x' as const,
+        value: Date.now(),
+        lineStyle: {
+          stroke: '#94a3b8',
+          strokeWidth: 1,
+          strokeDasharray: '4,3',
         },
-      ]
-    : [];
+      },
+    ];
+  }, [isToday]);
+
+  const labelById = useCallback(
+    (id: string) => seriesMeta.find((s) => s.id === id)?.label ?? id,
+    [seriesMeta],
+  );
 
   const makeBrushLayer = useCallback(
-    (props: { innerWidth: number; innerHeight: number }) => (
+    (props: {
+      innerWidth: number;
+      innerHeight: number;
+      series: NivoComputedSerie[];
+    }) => (
       <BrushLayer
         innerWidth={props.innerWidth}
         innerHeight={props.innerHeight}
+        series={props.series}
+        labelById={labelById}
         onZoom={handleZoom}
         onReset={resetZoom}
       />
     ),
-    [handleZoom, resetZoom],
+    [handleZoom, resetZoom, labelById],
   );
 
   return (
@@ -432,14 +405,14 @@ export default function DayPowerChart() {
           No readings for this day.
         </div>
       ) : (
-        <div style={{ height: 240 }}>
+        <div style={{ height: 280 }}>
           <ResponsiveLine
             data={allSeries}
             theme={nivoTheme}
             colors={(d) => (d as unknown as { color: string }).color}
             margin={{ top: 10, right: 60, bottom: 50, left: 70 }}
             xScale={{ type: 'linear', min: xMin, max: xMax }}
-            yScale={{ type: 'linear', min: 0, max: 'auto' }}
+            yScale={{ type: 'linear', min: -axisMax, max: axisMax }}
             axisBottom={{
               tickSize: 0,
               tickPadding: 8,
@@ -451,14 +424,14 @@ export default function DayPowerChart() {
               tickSize: 0,
               tickPadding: 8,
               format: (v: number) => `${Math.round(v)} W`,
-              tickValues: 5,
+              tickValues: yTickValues,
             }}
             enablePoints={false}
             enableGridX={false}
             curve="monotoneX"
             lineWidth={2}
             useMesh={false}
-            markers={nowMarker}
+            markers={markers}
             layers={[
               'grid',
               'markers',
@@ -468,21 +441,21 @@ export default function DayPowerChart() {
               'crosshair',
               'mesh',
               'legends',
-              makeBrushLayer,
+              makeBrushLayer as unknown as NivoLayer,
             ]}
             legends={[
               {
                 anchor: 'bottom-right',
                 direction: 'row',
                 translateY: 48,
-                itemWidth: 100,
+                itemWidth: 110,
                 itemHeight: 14,
                 symbolSize: 10,
                 symbolShape: 'circle',
                 onClick: (datum) => toggleId(datum.id as string),
-                data: POWER_SERIES_META.map((s) => ({
+                data: seriesMeta.map((s) => ({
                   id: s.id,
-                  label: s.id,
+                  label: s.label,
                   color: hiddenIds.has(s.id) ? '#334155' : s.color,
                 })),
               },

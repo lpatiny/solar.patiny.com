@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import type { Device } from '../../../types.ts';
+import type { ConfigData } from '../HomePage.tsx';
 
 import BatteryDeviceCard from './BatteryDeviceCard.tsx';
 import BatteryDeviceDetail from './BatteryDeviceDetail.tsx';
@@ -14,6 +15,20 @@ export default function BatteriesTab() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [reservePct, setReservePct] = useState(5);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/config')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg: ConfigData | null) => {
+        if (!cancelled && cfg) setReservePct(cfg.marstek_reserve_pct);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,13 +80,19 @@ export default function BatteriesTab() {
             key={device.id}
             device={device}
             selected={device.id === selectedId}
+            reservePct={reservePct}
             onSelect={() => setSelectedId(device.id)}
           />
         ))}
       </div>
 
       {selected && (
-        <BatteryDeviceDetail device={selected} from={from} to={now} />
+        <BatteryDeviceDetail
+          device={selected}
+          reservePct={reservePct}
+          from={from}
+          to={now}
+        />
       )}
     </div>
   );

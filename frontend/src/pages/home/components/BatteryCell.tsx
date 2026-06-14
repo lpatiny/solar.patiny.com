@@ -5,7 +5,11 @@ import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
 
 import type { BatteryFlow } from './batteryStatus.ts';
-import { formatPower } from './batteryStatus.ts';
+import {
+  batteryEtaHours,
+  formatDuration,
+  formatPower,
+} from './batteryStatus.ts';
 
 interface BatteryCellProps {
   name: string;
@@ -83,6 +87,14 @@ export default function BatteryCell({
         ? `${capacityKwh.toFixed(2)} kWh`
         : null;
 
+  const etaHours = offline
+    ? null
+    : batteryEtaHours(flow, watts, soc, capacityKwh);
+  const etaText =
+    etaHours === null
+      ? null
+      : `${flow === 'charging' ? 'Full' : 'Empty'} in ${formatDuration(etaHours)}`;
+
   const content: ReactNode = (
     <>
       <div
@@ -136,6 +148,9 @@ export default function BatteryCell({
             <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
               {energyText}
             </div>
+          )}
+          {etaText && (
+            <div style={{ marginTop: 4, color: visual.color }}>{etaText}</div>
           )}
         </div>
         <Icon

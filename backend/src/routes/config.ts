@@ -1,6 +1,7 @@
-/* eslint-disable camelcase, @typescript-eslint/naming-convention -- TypeBox schema keys match JSON API snake_case */
+/* eslint-disable camelcase -- TypeBox schema keys match JSON API snake_case */
 import { Type } from 'typebox';
 
+import { requireAuth } from '../auth.ts';
 import { db } from '../db/Database.ts';
 import { isConfigured as isSolarWebConfigured } from '../services/solarweb.ts';
 import type { FastifyTyped } from '../types.ts';
@@ -17,6 +18,8 @@ const ConfigResponse = Type.Object({
   panel_efficiency_pct: Type.Number(),
   panel_performance_ratio: Type.Number(),
   panel_temp_coeff_pct_per_c: Type.Number(),
+  byd_reserve_pct: Type.Number(),
+  marstek_reserve_pct: Type.Number(),
 });
 
 const PanelSettingsBody = Type.Object({
@@ -31,9 +34,52 @@ const PanelSettingsBody = Type.Object({
   panel_temp_coeff_pct_per_c: Type.Optional(
     Type.Number({ minimum: 0, maximum: 1 }),
   ),
+  byd_reserve_pct: Type.Optional(Type.Number({ minimum: 0, maximum: 90 })),
+  marstek_reserve_pct: Type.Optional(Type.Number({ minimum: 0, maximum: 90 })),
 });
 
 const DbStatsResponse = Type.Record(Type.String(), Type.Number());
+
+/** Defaults for the numeric settings stored in the settings table. */
+const SETTING_DEFAULTS = {
+  solarweb_scrape_delay_ms: 60_000,
+  panel_surface_m2: 46,
+  panel_efficiency_pct: 21,
+  panel_performance_ratio: 0.85,
+  panel_temp_coeff_pct_per_c: 0.4,
+  byd_reserve_pct: 7,
+  marstek_reserve_pct: 5,
+} as const;
+
+function setting(key: keyof typeof SETTING_DEFAULTS): number {
+  return Number(db.getSetting(key) ?? SETTING_DEFAULTS[key]);
+}
+
+/**
+ * Build the full configuration response from environment variables and the
+ * settings table.
+ * @returns the current service configuration (no secrets).
+ */
+function buildConfigResponse() {
+  const froniusHost = process.env.FRONIUS_HOST ?? 'http://192.168.1.30';
+  const modbusHost =
+    process.env.MODBUS_HOST ?? froniusHost.replace(/^https?:\/\//, '');
+  return {
+    fronius_host: froniusHost,
+    modbus_enabled: process.env.MODBUS_ENABLED === 'true',
+    modbus_host: modbusHost,
+    modbus_port: Number(process.env.MODBUS_PORT ?? 502),
+    solarweb_configured: isSolarWebConfigured(),
+    solarweb_scrape_delay_ms: setting('solarweb_scrape_delay_ms'),
+    poll_interval_ms: Number(process.env.POLL_INTERVAL_MS ?? 10_000),
+    panel_surface_m2: setting('panel_surface_m2'),
+    panel_efficiency_pct: setting('panel_efficiency_pct'),
+    panel_performance_ratio: setting('panel_performance_ratio'),
+    panel_temp_coeff_pct_per_c: setting('panel_temp_coeff_pct_per_c'),
+    byd_reserve_pct: setting('byd_reserve_pct'),
+    marstek_reserve_pct: setting('marstek_reserve_pct'),
+  };
+}
 
 /**
  * Returns the current service configuration (no secrets, just on/off status).
@@ -44,114 +90,23 @@ export default async function configRoutes(fastify: FastifyTyped) {
   fastify.get(
     '/api/config',
     { schema: { response: { 200: ConfigResponse } } },
-    async () => {
-      const froniusHost = process.env.FRONIUS_HOST ?? 'http://192.168.1.30';
-      const modbusEnabled = process.env.MODBUS_ENABLED === 'true';
-      const modbusHost =
-        process.env.MODBUS_HOST ?? froniusHost.replace(/^https?:\/\//, '');
-      const modbusPort = Number(process.env.MODBUS_PORT ?? 502);
-      const solarwebConfigured = isSolarWebConfigured();
-      const solarwebScrapeDelayMs = Number(
-        db.getSetting('solarweb_scrape_delay_ms') ?? 60_000,
-      );
-      const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS ?? 10_000);
-      const panelSurfaceM2 = Number(db.getSetting('panel_surface_m2') ?? 46);
-      const panelEfficiencyPct = Number(
-        db.getSetting('panel_efficiency_pct') ?? 21,
-      );
-      const panelPerformanceRatio = Number(
-        db.getSetting('panel_performance_ratio') ?? 0.85,
-      );
-      const panelTempCoeffPctPerC = Number(
-        db.getSetting('panel_temp_coeff_pct_per_c') ?? 0.4,
-      );
-
-      return {
-        fronius_host: froniusHost,
-        modbus_enabled: modbusEnabled,
-        modbus_host: modbusHost,
-        modbus_port: modbusPort,
-        solarweb_configured: solarwebConfigured,
-        solarweb_scrape_delay_ms: solarwebScrapeDelayMs,
-        poll_interval_ms: pollIntervalMs,
-        panel_surface_m2: panelSurfaceM2,
-        panel_efficiency_pct: panelEfficiencyPct,
-        panel_performance_ratio: panelPerformanceRatio,
-        panel_temp_coeff_pct_per_c: panelTempCoeffPctPerC,
-      };
-    },
+    () => buildConfigResponse(),
   );
 
   fastify.patch(
     '/api/config',
     {
+      preHandler: requireAuth,
       schema: {
         body: PanelSettingsBody,
         response: { 200: ConfigResponse },
       },
     },
     async (request) => {
-      const {
-        solarweb_scrape_delay_ms,
-        panel_surface_m2,
-        panel_efficiency_pct,
-        panel_performance_ratio,
-        panel_temp_coeff_pct_per_c,
-      } = request.body;
-      if (solarweb_scrape_delay_ms !== undefined) {
-        db.upsertSetting(
-          'solarweb_scrape_delay_ms',
-          String(solarweb_scrape_delay_ms),
-        );
+      for (const [key, value] of Object.entries(request.body)) {
+        if (value !== undefined) db.upsertSetting(key, String(value));
       }
-      if (panel_surface_m2 !== undefined) {
-        db.upsertSetting('panel_surface_m2', String(panel_surface_m2));
-      }
-      if (panel_efficiency_pct !== undefined) {
-        db.upsertSetting('panel_efficiency_pct', String(panel_efficiency_pct));
-      }
-      if (panel_performance_ratio !== undefined) {
-        db.upsertSetting(
-          'panel_performance_ratio',
-          String(panel_performance_ratio),
-        );
-      }
-      if (panel_temp_coeff_pct_per_c !== undefined) {
-        db.upsertSetting(
-          'panel_temp_coeff_pct_per_c',
-          String(panel_temp_coeff_pct_per_c),
-        );
-      }
-
-      const froniusHost = process.env.FRONIUS_HOST ?? 'http://192.168.1.30';
-      const modbusEnabled = process.env.MODBUS_ENABLED === 'true';
-      const modbusHost =
-        process.env.MODBUS_HOST ?? froniusHost.replace(/^https?:\/\//, '');
-      const modbusPort = Number(process.env.MODBUS_PORT ?? 502);
-      const solarwebConfigured = isSolarWebConfigured();
-      const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS ?? 10_000);
-
-      return {
-        fronius_host: froniusHost,
-        modbus_enabled: modbusEnabled,
-        modbus_host: modbusHost,
-        modbus_port: modbusPort,
-        solarweb_configured: solarwebConfigured,
-        solarweb_scrape_delay_ms: Number(
-          db.getSetting('solarweb_scrape_delay_ms') ?? 60_000,
-        ),
-        poll_interval_ms: pollIntervalMs,
-        panel_surface_m2: Number(db.getSetting('panel_surface_m2') ?? 46),
-        panel_efficiency_pct: Number(
-          db.getSetting('panel_efficiency_pct') ?? 21,
-        ),
-        panel_performance_ratio: Number(
-          db.getSetting('panel_performance_ratio') ?? 0.85,
-        ),
-        panel_temp_coeff_pct_per_c: Number(
-          db.getSetting('panel_temp_coeff_pct_per_c') ?? 0.4,
-        ),
-      };
+      return buildConfigResponse();
     },
   );
 

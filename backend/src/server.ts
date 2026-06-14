@@ -8,6 +8,10 @@ import {
   startBatteryPolling,
   stopBatteryPolling,
 } from './services/batteryPoller.ts';
+import {
+  startBatteryStrategy,
+  stopBatteryStrategy,
+} from './services/batteryStrategy.ts';
 import { startPoller, stopPoller } from './services/poller.ts';
 
 const fastify = await buildApp();
@@ -46,10 +50,12 @@ fastify.log.info(
 
 startPoller(fastify.log);
 startBatteryPolling(fastify.log);
+startBatteryStrategy(fastify.log);
 
 fastify.addHook('onClose', () => {
   stopPoller();
   stopBatteryPolling();
+  stopBatteryStrategy();
 });
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;

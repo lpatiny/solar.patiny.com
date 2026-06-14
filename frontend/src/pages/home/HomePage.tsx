@@ -18,10 +18,16 @@ import ConfigCard from './components/ConfigCard.tsx';
 import DayPowerChart from './components/DayPowerChart.tsx';
 import ElectricalCard from './components/ElectricalCard.tsx';
 import EnergyChart from './components/EnergyChart.tsx';
+import HeaderAuth from './components/HeaderAuth.tsx';
 import HistoryChart from './components/HistoryChart.tsx';
 import NeighborExportCard from './components/NeighborExportCard.tsx';
 import PowerFlowCard from './components/PowerFlowCard.tsx';
+import type { FlowBattery } from './components/PowerFlowDiagram.tsx';
+import PowerFlowDiagram from './components/PowerFlowDiagram.tsx';
 import WeatherChart from './components/WeatherChart.tsx';
+import { sumMarstekPowerW, sumStoredKwh } from './components/batteryStatus.ts';
+import { useAuth } from './components/useAuth.ts';
+import { useBatteryDevicesLive } from './components/useBatteryDevicesLive.ts';
 
 type BatteryMode = 'auto' | 'charge' | 'discharge' | 'idle';
 
@@ -75,6 +81,8 @@ export interface ConfigData {
   panel_efficiency_pct: number;
   panel_performance_ratio: number;
   panel_temp_coeff_pct_per_c: number;
+  byd_reserve_pct: number;
+  marstek_reserve_pct: number;
 }
 
 async function apiFetch<T>(url: string): Promise<T> {
@@ -95,9 +103,12 @@ function tsToDateInput(ts: number): string {
 }
 
 export default function HomePage() {
+  const { status } = useAuth();
+  const authenticated = status?.authenticated ?? false;
   const [realtime, setRealtime] = useState<RealtimeData | null>(null);
   const [battery, setBattery] = useState<BatteryStatus | null>(null);
   const [todayExport, setTodayExport] = useState<number | undefined>();
+  const { devices, liveById } = useBatteryDevicesLive();
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<string>(
@@ -127,6 +138,12 @@ export default function HomePage() {
   useEffect(() => {
     localStorage.setItem('solar-history-range', JSON.stringify(historyRange));
   }, [historyRange]);
+
+  // The Configuration tab is only available while logged in. Derive the active
+  // tab so a logged-out user lands on the overview without losing their stored
+  // preference (it is restored once they log back in).
+  const activeTab =
+    !authenticated && selectedTab === 'config' ? 'overview' : selectedTab;
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -311,6 +328,49 @@ export default function HomePage() {
     if (!Number.isNaN(ts)) setHistoryRange((r) => ({ ...r, to: ts }));
   }
 
+  const totalStoredKwh = battery
+    ? sumStoredKwh(battery.soc, battery.capacity_wh / 1000, devices, liveById)
+    : undefined;
+
+  // The Fronius reading only knows its own BYD battery, so fold the Marstek
+  // discharge/charge into the battery flow (Fronius under-reports the load by
+  // whatever the Marstek is supplying, see batteryStrategy.decide). Same sign
+  // convention: positive = discharging.
+  const marstekPowerW = sumMarstekPowerW(devices, liveById);
+
+  // Derive home consumption from the house power balance so the four rows are
+  // always internally consistent (production + battery discharge + grid import
+  // − grid export). grid_w is positive for import, negative for export, so it
+  // folds in with a single addition. Using Fronius's separately-measured
+  // consumption_w instead drifts from the other rows because the readings are
+  // sampled with slight time skew.
+  const productionW = realtime?.production_w ?? 0;
+  const gridW = realtime?.grid_w ?? 0;
+  const batteryW = (realtime?.battery_w ?? 0) + marstekPowerW;
+  const consumptionW = productionW + batteryW + gridW;
+
+  // Each battery as its own flow node: the Fronius BYD plus every Marstek device.
+  // Positive watts = discharging (into the hub), negative = charging.
+  const flowBatteries: FlowBattery[] = [];
+  if (battery) {
+    flowBatteries.push({
+      id: 'byd',
+      name: 'BYD',
+      watts: battery.power_w,
+      soc: battery.soc,
+    });
+  }
+  for (const device of devices) {
+    const values = liveById[device.id]?.values;
+    if (!values) continue;
+    flowBatteries.push({
+      id: `device-${device.id}`,
+      name: device.name,
+      watts: values.ac_power_w ?? 0,
+      soc: values.soc_pct,
+    });
+  }
+
   const overviewPanel = (
     <div
       style={{
@@ -320,11 +380,19 @@ export default function HomePage() {
         paddingTop: 20,
       }}
     >
+      <PowerFlowDiagram
+        productionW={productionW}
+        gridW={gridW}
+        consumptionW={consumptionW}
+        batteries={flowBatteries}
+        isStale={realtime?.is_stale ?? false}
+      />
       <PowerFlowCard
-        productionW={realtime?.production_w ?? 0}
-        gridW={realtime?.grid_w ?? 0}
-        batteryW={realtime?.battery_w ?? 0}
-        consumptionW={realtime?.consumption_w ?? 0}
+        productionW={productionW}
+        gridW={gridW}
+        batteryW={batteryW}
+        consumptionW={consumptionW}
+        totalStoredKwh={totalStoredKwh}
         isStale={realtime?.is_stale ?? false}
       />
       <NeighborExportCard
@@ -337,7 +405,11 @@ export default function HomePage() {
           homePowerW={battery.power_w}
           homeHost={config?.fronius_host || config?.modbus_host || null}
           homeCapacityKwh={battery.capacity_wh / 1000}
+          homeReservePct={config?.byd_reserve_pct ?? 7}
+          marstekReservePct={config?.marstek_reserve_pct ?? 5}
           homeOffline={realtime?.is_stale ?? false}
+          devices={devices}
+          liveById={liveById}
           onOpen={openBatteriesTab}
         />
       )}
@@ -350,7 +422,10 @@ export default function HomePage() {
 
   const electricalPanel = (
     <div style={{ paddingTop: 20 }}>
-      <ElectricalCard realtime={realtime} />
+      <ElectricalCard
+        realtime={realtime}
+        reservePct={config?.byd_reserve_pct ?? 7}
+      />
       {modbusDisabled && (
         <div style={{ marginTop: 16 }}>
           <ChargingStrategyChart />
@@ -535,13 +610,14 @@ export default function HomePage() {
               Updated {new Date(realtime.timestamp * 1000).toLocaleTimeString()}
             </span>
           )}
+          <HeaderAuth />
         </div>
       </div>
 
       {/* Tabs */}
       <Tabs
         id="main"
-        selectedTabId={selectedTab}
+        selectedTabId={activeTab}
         onChange={(id) => {
           const tab = String(id);
           setSelectedTab(tab);
@@ -555,7 +631,9 @@ export default function HomePage() {
         <Tab id="batteries" title="Batteries" panel={<BatteriesTab />} />
         <Tab id="history" title="History" panel={historyPanel} />
         <Tab id="analysis" title="Analysis" panel={<AnalysisTab />} />
-        <Tab id="config" title="Configuration" panel={configPanel} />
+        {authenticated && (
+          <Tab id="config" title="Configuration" panel={configPanel} />
+        )}
       </Tabs>
     </div>
   );

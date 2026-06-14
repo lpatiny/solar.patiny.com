@@ -1,8 +1,8 @@
 import { Button, Callout, InputGroup } from '@blueprintjs/core';
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-import { fetchAuthStatus, login, logout } from './auth.ts';
+import { useAuth } from './useAuth.ts';
 
 interface LoginPanelProps {
   /** Rendered only while authenticated (e.g. the control widgets). */
@@ -10,37 +10,21 @@ interface LoginPanelProps {
 }
 
 /**
- * Gates its children behind a login form. While unauthenticated it shows a
- * username/password form; once logged in it shows the children plus a small
- * "logged in as … / log out" bar. The session is a cookie shared across the
- * whole app, so logging in here also unlocks the other protected routes.
+ * Gates its children behind the shared login state. While unauthenticated it
+ * shows a username/password form; once logged in it shows the children plus a
+ * small "logged in as … / log out" bar. The session is a cookie shared across
+ * the whole app, so logging in here (or from the header) unlocks every
+ * protected route at once.
  * @param root0 - Component props.
  * @param root0.children - Content shown only to authenticated users.
  * @returns The login gate.
  */
 export default function LoginPanel({ children }: LoginPanelProps) {
-  const [status, setStatus] = useState<{
-    authenticated: boolean;
-    username: string | null;
-  } | null>(null);
+  const { status, login, logout } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchAuthStatus()
-      .then((s) => {
-        if (!cancelled) setStatus(s);
-      })
-      .catch(() => {
-        if (!cancelled) setStatus({ authenticated: false, username: null });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   async function submit() {
     setBusy(true);
@@ -48,7 +32,6 @@ export default function LoginPanel({ children }: LoginPanelProps) {
     try {
       const result = await login(username, password);
       if (result.ok) {
-        setStatus({ authenticated: true, username: result.username });
         setPassword('');
       } else {
         setError(result.error);
@@ -62,7 +45,6 @@ export default function LoginPanel({ children }: LoginPanelProps) {
     setBusy(true);
     try {
       await logout();
-      setStatus({ authenticated: false, username: null });
     } finally {
       setBusy(false);
     }
@@ -124,7 +106,12 @@ export default function LoginPanel({ children }: LoginPanelProps) {
         <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
           Logged in as {status.username}
         </span>
-        <Button minimal small loading={busy} onClick={() => void doLogout()}>
+        <Button
+          variant="minimal"
+          size="small"
+          loading={busy}
+          onClick={() => void doLogout()}
+        >
           Log out
         </Button>
       </div>

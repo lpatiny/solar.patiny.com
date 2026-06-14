@@ -14,6 +14,7 @@ import historyRoutes from './routes/history.ts';
 import realtimeRoutes from './routes/realtime.ts';
 import solarwebRoutes from './routes/solarweb.ts';
 import statsRoutes from './routes/stats.ts';
+import strategyRoutes from './routes/strategy.ts';
 import weatherRoutes from './routes/weather.ts';
 
 export async function buildApp() {
@@ -37,6 +38,7 @@ export async function buildApp() {
   await fastify.register(historyRoutes);
   await fastify.register(solarwebRoutes);
   await fastify.register(statsRoutes);
+  await fastify.register(strategyRoutes);
   await fastify.register(weatherRoutes);
 
   return fastify;

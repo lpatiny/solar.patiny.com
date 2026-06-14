@@ -1,5 +1,6 @@
 import { Type } from 'typebox';
 
+import { requireAuth } from '../auth.ts';
 import { syncAllHistory } from '../services/solarweb.ts';
 import {
   cancelSync,
@@ -14,6 +15,7 @@ export default async function solarwebRoutes(fastify: FastifyTyped) {
   fastify.post(
     '/api/solarweb/sync-history',
     {
+      preHandler: requireAuth,
       schema: {
         response: {
           200: Type.Object({
@@ -32,6 +34,7 @@ export default async function solarwebRoutes(fastify: FastifyTyped) {
   fastify.post(
     '/api/solarweb/scrape-history',
     {
+      preHandler: requireAuth,
       schema: {
         response: {
           200: Type.Object({ started: Type.Boolean() }),
@@ -72,6 +75,7 @@ export default async function solarwebRoutes(fastify: FastifyTyped) {
   fastify.post(
     '/api/solarweb/session',
     {
+      preHandler: requireAuth,
       schema: {
         body: Type.Object({ cookies: Type.String() }),
         response: {
@@ -96,6 +100,7 @@ export default async function solarwebRoutes(fastify: FastifyTyped) {
   fastify.post(
     '/api/solarweb/scrape-cancel',
     {
+      preHandler: requireAuth,
       schema: {
         response: { 200: Type.Object({ cancelled: Type.Boolean() }) },
       },

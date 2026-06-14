@@ -1,16 +1,19 @@
-import { Button, ButtonGroup, Callout, Slider, Tag } from '@blueprintjs/core';
+import { Callout, Tag } from '@blueprintjs/core';
 import { useEffect, useState } from 'react';
 
-import type { ControlParam, Device, DeviceLive } from '../../../types.ts';
+import type { Device, DeviceLive } from '../../../types.ts';
 
 import BatteryHistoryChart from './BatteryHistoryChart.tsx';
-import LoginPanel from './LoginPanel.tsx';
-import ManualControl from './ManualControl.tsx';
-import SchedulePanel from './SchedulePanel.tsx';
-import { batteryFlow } from './batteryStatus.ts';
+import {
+  batteryEtaHours,
+  batteryFlow,
+  formatDuration,
+  usableBattery,
+} from './batteryStatus.ts';
 
 interface BatteryDeviceDetailProps {
   device: Device;
+  reservePct: number;
   from: number;
   to: number;
 }
@@ -33,57 +36,19 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ControlRow({ param }: { param: ControlParam }) {
-  return (
-    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-      <div
-        style={{
-          alignItems: 'center',
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginBottom: 6,
-        }}
-      >
-        <span style={{ fontSize: 13 }}>{param.label}</span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-          current:{' '}
-          {param.value === null ? '—' : `${param.value}${param.unit ?? ''}`}
-        </span>
-      </div>
-      {param.kind === 'enum' && param.options ? (
-        <ButtonGroup>
-          {param.options.map((option) => (
-            <Button key={option.value} disabled>
-              {option.label}
-            </Button>
-          ))}
-        </ButtonGroup>
-      ) : (
-        <Slider
-          min={param.min ?? 0}
-          max={param.max ?? 100}
-          stepSize={1}
-          labelRenderer={false}
-          value={param.value ?? param.min ?? 0}
-          disabled
-          onChange={() => undefined}
-        />
-      )}
-    </div>
-  );
-}
-
 /**
- * Full detail view for one battery device: all measurements, control preview
- * and history.
+ * Full detail view for one battery device: all measurements and history.
+ * Control and scheduling live in the Battery Control configuration tab.
  * @param root0 - Component props.
  * @param root0.device - The device to display.
+ * @param root0.reservePct - Reserve floor in percent, hidden from the display.
  * @param root0.from - History range start (unix seconds).
  * @param root0.to - History range end (unix seconds).
  * @returns The device detail view.
  */
 export default function BatteryDeviceDetail({
   device,
+  reservePct,
   from,
   to,
 }: BatteryDeviceDetailProps) {
@@ -108,8 +73,14 @@ export default function BatteryDeviceDetail({
   }, [device.id]);
 
   const values = live?.values ?? null;
+  const usable = usableBattery(
+    values?.soc_pct ?? null,
+    values?.energy_kwh ?? null,
+    reservePct,
+  );
   const state = values?.inverter_state ?? null;
-  const { flow } = batteryFlow(values?.ac_power_w ?? null);
+  const { flow, watts } = batteryFlow(values?.ac_power_w ?? null);
+  const etaHours = batteryEtaHours(flow, watts, usable.soc, usable.capacityKwh);
   const flowIntent =
     flow === 'charging'
       ? 'success'
@@ -156,10 +127,7 @@ export default function BatteryDeviceDetail({
             marginTop: 12,
           }}
         >
-          <Metric
-            label="State of charge"
-            value={fmt(values?.soc_pct ?? null, '%', 0)}
-          />
+          <Metric label="State of charge" value={fmt(usable.soc, '%', 0)} />
           <Metric
             label="Battery voltage"
             value={fmt(values?.voltage_v ?? null, 'V', 2)}
@@ -185,12 +153,16 @@ export default function BatteryDeviceDetail({
           <Metric
             label="Energy stored"
             value={
-              values?.energy_kwh == null
+              usable.capacityKwh == null
                 ? '—'
-                : values.soc_pct == null
-                  ? `${values.energy_kwh.toFixed(2)} kWh`
-                  : `${((values.soc_pct / 100) * values.energy_kwh).toFixed(2)} / ${values.energy_kwh.toFixed(2)} kWh`
+                : usable.soc == null
+                  ? `${usable.capacityKwh.toFixed(2)} kWh`
+                  : `${((usable.soc / 100) * usable.capacityKwh).toFixed(2)} / ${usable.capacityKwh.toFixed(2)} kWh`
             }
+          />
+          <Metric
+            label={flow === 'charging' ? 'Time to full' : 'Time to empty'}
+            value={etaHours === null ? '—' : formatDuration(etaHours)}
           />
           <Metric
             label="Internal temp"
@@ -217,38 +189,6 @@ export default function BatteryDeviceDetail({
             value={fmt(values?.daily_discharge_kwh ?? null, 'kWh', 2)}
           />
         </div>
-      </div>
-
-      <div className="card">
-        <span className="card-title">Control</span>
-        <LoginPanel>
-          <ManualControl deviceId={device.id} />
-        </LoginPanel>
-        <Callout intent="warning" style={{ margin: '12px 0' }}>
-          The remaining widgets below are read-only previews of what can be
-          controlled and show the current values.
-        </Callout>
-        {live && live.control.length > 0 ? (
-          live.control.map((param) => (
-            <ControlRow key={param.key} param={param} />
-          ))
-        ) : (
-          <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-            No control data yet (waiting for the first successful poll).
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <span className="card-title">Schedule (per day / hour)</span>
-        <Callout intent="primary" style={{ margin: '8px 0' }}>
-          Slots are pushed to the battery and run on the device itself. Charge
-          slots draw from the grid; discharge slots feed it. The device cannot
-          report its current schedule, so this editor is write-only.
-        </Callout>
-        <LoginPanel>
-          <SchedulePanel deviceId={device.id} />
-        </LoginPanel>
       </div>
 
       <BatteryHistoryChart deviceId={device.id} from={from} to={to} />

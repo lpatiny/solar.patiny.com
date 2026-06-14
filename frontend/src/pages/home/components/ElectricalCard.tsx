@@ -2,8 +2,11 @@ import { Intent, NonIdealState, ProgressBar, Tag } from '@blueprintjs/core';
 
 import type { RealtimeData } from '../HomePage.tsx';
 
+import { usableBattery } from './batteryStatus.ts';
+
 interface ElectricalCardProps {
   realtime: RealtimeData | null;
+  reservePct: number;
 }
 
 function fmt(value: number | null, digits = 0, unit = ''): string {
@@ -130,9 +133,17 @@ function ModbusStatusTag({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function ElectricalCard({ realtime }: ElectricalCardProps) {
+export default function ElectricalCard({
+  realtime,
+  reservePct,
+}: ElectricalCardProps) {
   const status = realtime?.modbus_status ?? 'disabled';
   const error = realtime?.modbus_error ?? null;
+  const usableSoc = usableBattery(
+    realtime?.battery_soc ?? null,
+    null,
+    reservePct,
+  ).soc;
 
   const pv1 = realtime?.pv1_power_w ?? null;
   const pv2 = realtime?.pv2_power_w ?? null;
@@ -266,7 +277,7 @@ export default function ElectricalCard({ realtime }: ElectricalCardProps) {
             <SectionHeader title="Battery (BYD HVM 11.0)" />
             <ParamRow
               label="State of charge"
-              value={fmt(realtime?.battery_soc ?? null, 1, '%')}
+              value={fmt(usableSoc, 1, '%')}
               color="var(--battery)"
             />
             <ParamRow

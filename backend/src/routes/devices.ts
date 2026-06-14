@@ -385,8 +385,11 @@ export default async function deviceRoutes(fastify: FastifyTyped) {
     async (request, reply) => {
       const device = db.getDevice(request.params.id);
       if (!device) return reply.code(404).send({ error: 'device not found' });
-      const { action, power_w: powerW = 0, duration_s: durationS } =
-        request.body;
+      const {
+        action,
+        power_w: powerW = 0,
+        duration_s: durationS,
+      } = request.body;
       try {
         const ok = await setMarstekUdpManual(
           { host: device.host, port: device.port },
