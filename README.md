@@ -9,9 +9,47 @@ Solar energy monitoring and control dashboard for Fronius inverter with battery 
 - Historical charts (raw, hourly, daily) backed by SQLite
 - Optional Modbus TCP for advanced monitoring and battery charge control
 - Optional SolarWeb cloud API for daily production totals and history sync
+- Optional IKEA DIRIGERA hub environment sensors (temperature, humidity, CO₂, PM2.5)
 
 See [`docs/`](./docs/README.md) for hardware integration notes (battery specs,
 Marstek Modbus register map, and the Marstek Open API).
+
+## How it works — the power model
+
+There are two classes of battery in this installation, and the difference is
+fundamental to every calculation in the app:
+
+- **The Fronius inverter + BYD battery are _measured_.** The Fronius Smart Meter
+  sits at the grid connection point and reports the real flows for solar
+  production (`P_PV`), the BYD battery (`P_Akku`: positive = discharging,
+  negative = charging), grid exchange (`P_Grid`: positive = importing, negative
+  = exporting) and the resulting house load (`P_Load`). These are ground truth.
+- **The two Marstek Venus E batteries are _controlled_, not measured by Fronius.**
+  They are simply plugged into ordinary household sockets and driven over UDP
+  (charge/discharge setpoints). The Fronius meter has no idea they exist — it
+  sees them as part of the ordinary household load.
+
+The consequence that drives the whole control strategy:
+
+> Because the Marstek batteries are **behind** the Fronius meter, the Fronius
+> consumption reading **lies** about the true household load. **Charging** a
+> Marstek looks to Fronius like extra consumption (it over-reports). **Discharging**
+> a Marstek looks like reduced consumption (it under-reports).
+
+Formally, with `marstek_net = Σ(Marstek discharge) − Σ(Marstek charge)`:
+
+```
+true household load  L = production_w + grid_w + battery_w + marstek_net
+                       = consumption_w(Fronius) + marstek_net
+```
+
+So `consumption_w` reported by Fronius is **not** the real consumption whenever a
+Marstek is active — the real consumption is `consumption_w + marstek_net`. The
+autonomous strategy therefore derives the Marstek discharge target from the full
+power balance (`grid + BYD + Marstek`), never from the raw Fronius consumption
+figure, so it stays correct regardless of how the Marstek distort the meter. The
+frontend power-balance chart likewise reconstructs the true load by adding the
+Marstek's own AC power back in.
 
 ## Requirements
 
@@ -93,3 +131,26 @@ All configuration is via environment variables (see `.env.example` for the full 
 | `POLL_INTERVAL_MS`      | `10000` | Data polling interval                          |
 | `MODBUS_ENABLED`        | `false` | Enable Modbus TCP polling                      |
 | `SOLARWEB_PV_SYSTEM_ID` | —       | SolarWeb system ID for cloud sync              |
+| `DIRIGERA_HOST`         | —       | IKEA DIRIGERA hub LAN IP (temperature sensors) |
+| `DIRIGERA_TOKEN`        | —       | DIRIGERA access token (see below)              |
+
+### IKEA DIRIGERA temperature sensors
+
+The overview page shows the temperature, humidity, CO₂ and PM2.5 reported by
+every environment sensor paired to an IKEA DIRIGERA hub (e.g. ALPSTUGA units).
+Set `DIRIGERA_HOST` to the hub's LAN IP, then generate an access token with the
+one-time pairing helper — press the action button on the bottom of the hub when
+prompted:
+
+```sh
+npm run dirigera-auth -w backend -- <hub-ip>
+```
+
+It prints the `DIRIGERA_HOST` / `DIRIGERA_TOKEN` lines to paste into `.env`. The
+card stays hidden until both are set and the hub reports at least one sensor.
+
+Every metric is also recorded to SQLite every 5 minutes (table
+`temperature_readings`). The Temperatures card shows live values per sensor plus
+**last-24h** temperature and humidity trends; the History tab plots **all
+metrics** (temperature, humidity, CO₂, PM2.5) over the selected date range. Tune
+the cadence with `DIRIGERA_PERSIST_INTERVAL_MS`.

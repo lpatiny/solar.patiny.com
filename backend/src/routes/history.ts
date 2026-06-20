@@ -106,7 +106,9 @@ export default async function historyRoutes(fastify: FastifyTyped) {
         production_w: r.production_w,
         grid_w: r.grid_w,
         battery_w: r.battery_w,
-        consumption_w: r.consumption_w,
+        // True household load: the Fronius residual cannot see the Marstek, so add
+        // their net back (discharge raises the real load, charge lowers it).
+        consumption_w: r.consumption_w + (r.marstek_net_w ?? 0),
         battery_soc_max: r.battery_soc,
         battery_soc_min: null as number | null,
       }));

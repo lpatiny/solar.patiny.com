@@ -34,9 +34,11 @@ export interface DeviceState {
 /**
  * Decide each enabled Marstek device's charge/discharge action for this cycle.
  * Charging takes priority: it holds grid injection at the target by storing only
- * the surplus above it (capped per battery). When there is no surplus to store,
- * the loop discharges to cover house load — capped per battery — down to the
- * floor.
+ * the exportable solar surplus above it (capped per battery). The surplus is the
+ * grid export plus what the batteries already charge, MINUS any grid import — so
+ * grid-sourced charging is never mistaken for surplus. When there is no surplus to
+ * store, the loop discharges to cover house load — capped per battery — down to
+ * the floor.
  *
  * Discharge has two modes (`config.dischargeMode`):
  *
@@ -82,9 +84,13 @@ export function decide(
     totalDischarging += device.dischargingW;
   }
 
-  // Charge from solar surplus (priority). Add back what is already being charged
-  // to reconstruct the true exportable surplus before the batteries absorbed it.
-  const surplus = injectionW + totalCharging;
+  // Charge from solar surplus (priority). Reconstruct the true exportable surplus:
+  // add back what the batteries are already charging (it had reduced the visible
+  // injection), then subtract any grid import. When the house is importing there
+  // is no solar surplus to store, so grid-sourced charging must never be counted
+  // as surplus — otherwise at night the batteries keep charging from the grid and
+  // the loop never reaches the discharge branch (a self-perpetuating latch).
+  const surplus = injectionW + totalCharging - importW;
   const chargeCap = config.chargeMaxW * chargeEligible.length;
   const desiredCharge = Math.max(
     0,

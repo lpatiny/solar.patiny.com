@@ -1,6 +1,6 @@
 import { Button, ButtonGroup } from '@blueprintjs/core';
 import { ResponsiveLine } from '@nivo/line';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { NivoComputedSerie } from './BrushLayer.tsx';
 import { BrushLayer } from './BrushLayer.tsx';
@@ -108,8 +108,54 @@ function formatDateLabel(date: Date): string {
   return date.toLocaleDateString([], { dateStyle: 'medium' });
 }
 
-function getThreeHourTicksMs(midnightMs: number): number[] {
-  return Array.from({ length: 9 }, (_, i) => midnightMs + i * 3 * 3600_000);
+// Candidate tick spacings (ms), ascending; each is an even divisor of 24 h so
+// that, aligned to local midnight, ticks always land on round clock times.
+const TICK_STEPS_MS = [
+  60_000, // 1 min
+  2 * 60_000, // 2 min
+  5 * 60_000, // 5 min
+  10 * 60_000, // 10 min
+  15 * 60_000, // 15 min
+  30 * 60_000, // 30 min
+  3600_000, // 1 h
+  2 * 3600_000, // 2 h
+  3 * 3600_000, // 3 h
+  6 * 3600_000, // 6 h
+  12 * 3600_000, // 12 h
+];
+
+const TARGET_TICK_COUNT = 8;
+
+/**
+ * Compute evenly-spaced x-axis ticks for the currently visible time window.
+ * The spacing is chosen from {@link TICK_STEPS_MS} so a zoomed-in view shows
+ * several labelled ticks (recalculated for the span) instead of falling back to
+ * the sparse whole-day 3-hour marks. Ticks are aligned to local midnight so
+ * they land on round clock times; the unzoomed full day yields the usual
+ * 3-hour ticks.
+ * @param midnightMs - Local midnight of the displayed day, in epoch ms.
+ * @param xMin - Left edge of the visible window, in epoch ms.
+ * @param xMax - Right edge of the visible window, in epoch ms.
+ */
+function getTimeTicksMs(
+  midnightMs: number,
+  xMin: number,
+  xMax: number,
+): number[] {
+  const idealStep = (xMax - xMin) / TARGET_TICK_COUNT;
+  let step = TICK_STEPS_MS.at(-1) ?? 3600_000;
+  for (const candidate of TICK_STEPS_MS) {
+    if (candidate >= idealStep) {
+      step = candidate;
+      break;
+    }
+  }
+  const ticks: number[] = [];
+  const firstIndex = Math.ceil((xMin - midnightMs) / step);
+  for (let t = midnightMs + firstIndex * step; t <= xMax; t += step) {
+    ticks.push(t);
+  }
+  return ticks;
 }
 
 function formatTickMs(ms: number): string {
@@ -131,11 +177,15 @@ export default function DayPowerChart() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [data, setData] = useState<ReadingPoint[]>([]);
   const [forecast, setForecast] = useState<ForecastData | null>(null);
-  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [zoomRange, setZoomRange] = useState<{
     startMs: number;
     endMs: number;
   } | null>(null);
+  // Multiplier on the auto-fitted y-axis magnitude, driven by the mouse wheel
+  // while hovering the chart. < 1 magnifies the traces (zoom in), > 1 shrinks
+  // them (zoom out). Reset to 1 on a new day or via "Reset zoom".
+  const [yZoom, setYZoom] = useState(1);
+  const chartRef = useRef<HTMLDivElement>(null);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -150,6 +200,7 @@ export default function DayPowerChart() {
   if (selectedDate !== prevSelectedDate) {
     setPrevSelectedDate(selectedDate);
     setZoomRange(null);
+    setYZoom(1);
   }
   const [wasToday, setWasToday] = useState(isToday);
   if (isToday !== wasToday) {
@@ -166,17 +217,21 @@ export default function DayPowerChart() {
     return () => clearInterval(id);
   }, [isToday]);
 
-  const toggleId = useCallback((id: string) => {
-    setHiddenIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, []);
+  // Wheel over the chart rescales the y-axis instead of scrolling the page.
+  // Registered as a non-passive native listener so preventDefault() works
+  // (React's onWheel is passive and cannot stop the page from scrolling).
+  const showChart = !(data.length === 0 && !isToday);
+  useEffect(() => {
+    const node = chartRef.current;
+    if (!node) return;
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const factor = Math.exp(event.deltaY * 0.001);
+      setYZoom((prev) => Math.min(10, Math.max(0.1, prev * factor)));
+    };
+    node.addEventListener('wheel', handleWheel, { passive: false });
+    return () => node.removeEventListener('wheel', handleWheel);
+  }, [showChart]);
 
   useEffect(() => {
     let cancelled = false;
@@ -247,7 +302,10 @@ export default function DayPowerChart() {
     [midnightMs, nextMidnightMs],
   );
 
-  const resetZoom = useCallback(() => setZoomRange(null), []);
+  const resetZoom = useCallback(() => {
+    setZoomRange(null);
+    setYZoom(1);
+  }, []);
 
   const { series: balanceSeries, yMax: balanceYMax } = useMemo(
     () =>
@@ -282,19 +340,22 @@ export default function DayPowerChart() {
     return niceAxisMax(raw);
   }, [balanceYMax, forecastSeries]);
 
+  const scaledAxisMax = axisMax * yZoom;
+
   const yTickValues = useMemo(
-    () => [-axisMax, -axisMax / 2, 0, axisMax / 2, axisMax],
-    [axisMax],
+    () => [
+      -scaledAxisMax,
+      -scaledAxisMax / 2,
+      0,
+      scaledAxisMax / 2,
+      scaledAxisMax,
+    ],
+    [scaledAxisMax],
   );
 
   const allSeries = useMemo(
-    () => [
-      ...balanceSeries.filter((s) => !hiddenIds.has(s.id)),
-      ...forecastSeries.filter(
-        (s) => !hiddenIds.has(s.id.replace('_forecast', '')),
-      ),
-    ],
-    [balanceSeries, forecastSeries, hiddenIds],
+    () => [...balanceSeries, ...forecastSeries],
+    [balanceSeries, forecastSeries],
   );
 
   const seriesMeta = useMemo(
@@ -315,10 +376,9 @@ export default function DayPowerChart() {
   const xMin = zoomRange ? zoomRange.startMs : midnightMs;
   const xMax = zoomRange ? zoomRange.endMs : nextMidnightMs;
 
-  const ticks = getThreeHourTicksMs(midnightMs);
   const visibleTicks = useMemo(
-    () => ticks.filter((t) => t >= xMin && t <= xMax),
-    [ticks, xMin, xMax],
+    () => getTimeTicksMs(midnightMs, xMin, xMax),
+    [midnightMs, xMin, xMax],
   );
 
   const markers = useMemo(() => {
@@ -380,7 +440,7 @@ export default function DayPowerChart() {
           {formatDateLabel(selectedDate)} — Power
         </span>
         <div style={{ alignItems: 'center', display: 'flex', gap: 8 }}>
-          {zoomRange && (
+          {(zoomRange || yZoom !== 1) && (
             <Button size="small" variant="minimal" onClick={resetZoom}>
               Reset zoom
             </Button>
@@ -413,7 +473,7 @@ export default function DayPowerChart() {
         </div>
       </div>
 
-      {data.length === 0 && !isToday ? (
+      {!showChart ? (
         <div
           style={{
             color: 'var(--text-secondary)',
@@ -424,14 +484,14 @@ export default function DayPowerChart() {
           No readings for this day.
         </div>
       ) : (
-        <div style={{ height: 280 }}>
+        <div ref={chartRef} style={{ height: 280 }}>
           <ResponsiveLine
             data={allSeries}
             theme={nivoTheme}
             colors={(d) => (d as unknown as { color: string }).color}
             margin={{ top: 10, right: 60, bottom: 50, left: 70 }}
             xScale={{ type: 'linear', min: xMin, max: xMax }}
-            yScale={{ type: 'linear', min: -axisMax, max: axisMax }}
+            yScale={{ type: 'linear', min: -scaledAxisMax, max: scaledAxisMax }}
             axisBottom={{
               tickSize: 0,
               tickPadding: 8,
@@ -471,11 +531,10 @@ export default function DayPowerChart() {
                 itemHeight: 14,
                 symbolSize: 10,
                 symbolShape: 'circle',
-                onClick: (datum) => toggleId(datum.id as string),
                 data: seriesMeta.map((s) => ({
                   id: s.id,
                   label: s.label,
-                  color: hiddenIds.has(s.id) ? '#334155' : s.color,
+                  color: s.color,
                 })),
               },
             ]}

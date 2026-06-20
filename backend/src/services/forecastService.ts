@@ -232,7 +232,7 @@ export async function getForecast(
     .statement<{ slot_hour_index: number; avg_consumption_w: number }>(
       `SELECT
          CAST(strftime('%H', timestamp, 'unixepoch', 'localtime') AS INTEGER) / 3 AS slot_hour_index,
-         AVG(self_consumption_w + import_w) AS avg_consumption_w
+         AVG(self_consumption_w + import_w + battery_discharge_w) AS avg_consumption_w
        FROM solarweb_readings
        WHERE timestamp BETWEEN ? AND ?
        GROUP BY slot_hour_index

@@ -19,6 +19,8 @@ export interface ReadingRow {
   battery_charging_w: number | null;
   battery_discharging_w: number | null;
   meter_power_w: number | null;
+  /** Net Marstek AC power at this sample (discharge positive); null for old rows. */
+  marstek_net_w: number | null;
 }
 
 export interface AggregatedReadingRow {
@@ -39,7 +41,10 @@ export interface SolarwebReadingRow {
   export_w: number;
   import_w: number;
   self_consumption_w: number;
+  /** "Power to battery": battery charging (PV → battery), ≥ 0. */
   battery_w: number;
+  /** "Power from battery": battery discharging into the house, ≥ 0. */
+  battery_discharge_w: number;
   battery_soc_pct: number | null;
 }
 
@@ -85,6 +90,22 @@ export interface AggregatedStatsRow {
   import_kwh: number;
   self_consumption_kwh: number;
   battery_charge_kwh: number;
+}
+
+/** A temperature sensor paired to the IKEA DIRIGERA hub. */
+export interface TemperatureSensorRow {
+  id: string;
+  name: string;
+}
+
+/** One environment sample (raw, or one aggregation bucket aliased as `timestamp`). */
+export interface TemperatureReadingRow {
+  timestamp: number;
+  sensor_id: string;
+  temperature_c: number;
+  humidity_pct: number | null;
+  co2_ppm: number | null;
+  pm25_ugm3: number | null;
 }
 
 /** A configured device in the generic device registry. */

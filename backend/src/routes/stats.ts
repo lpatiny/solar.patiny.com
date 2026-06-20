@@ -26,47 +26,43 @@ const StatsQuery = Type.Object({
   to: Type.Optional(Type.String({ description: 'ISO date YYYY-MM-DD' })),
 });
 
-// Each 5-min point represents 1/12 of an hour → divide watt-sum by 12 000 for kWh.
-const KWH_DIVISOR = 12_000;
+// Energy = Σ power × actual seconds-to-next-sample / 3 600 000 (W·s per kWh).
+// Deriving the duration from real timestamps (rather than assuming a fixed 5-min
+// cadence) keeps a partial or irregularly-sampled day from being mis-scaled; the
+// gap to the next sample is clamped so a long outage cannot overcount.
+const WS_PER_KWH = 3_600_000;
+const NOMINAL_SLOT_S = 300; // assumed duration of the last sample in the range
+const MAX_SLOT_S = 600; // cap a gap so missing samples contribute at most this
 
-const DAILY_SQL = `
-  SELECT
-    strftime('%Y-%m-%d', timestamp, 'unixepoch') AS period,
-    SUM(production_w)      / ${KWH_DIVISOR} AS production_kwh,
-    SUM(export_w)          / ${KWH_DIVISOR} AS export_kwh,
-    SUM(import_w)          / ${KWH_DIVISOR} AS import_kwh,
-    SUM(self_consumption_w)/ ${KWH_DIVISOR} AS self_consumption_kwh,
-    SUM(battery_w)         / ${KWH_DIVISOR} AS battery_charge_kwh
-  FROM solarweb_readings
-  WHERE timestamp BETWEEN ? AND ?
-  GROUP BY period
-  ORDER BY period`;
+function energySql(periodExpr: string): string {
+  return `
+    SELECT
+      ${periodExpr} AS period,
+      SUM(production_w * dt_s)       / ${WS_PER_KWH} AS production_kwh,
+      SUM(export_w * dt_s)           / ${WS_PER_KWH} AS export_kwh,
+      SUM(import_w * dt_s)           / ${WS_PER_KWH} AS import_kwh,
+      SUM(self_consumption_w * dt_s) / ${WS_PER_KWH} AS self_consumption_kwh,
+      SUM(battery_w * dt_s)          / ${WS_PER_KWH} AS battery_charge_kwh
+    FROM (
+      SELECT
+        timestamp, production_w, export_w, import_w, self_consumption_w, battery_w,
+        MIN(
+          MAX(
+            COALESCE(LEAD(timestamp) OVER (ORDER BY timestamp) - timestamp, ${NOMINAL_SLOT_S}),
+            0
+          ),
+          ${MAX_SLOT_S}
+        ) AS dt_s
+      FROM solarweb_readings
+      WHERE timestamp BETWEEN ? AND ?
+    )
+    GROUP BY period
+    ORDER BY period`;
+}
 
-const MONTHLY_SQL = `
-  SELECT
-    strftime('%Y-%m', timestamp, 'unixepoch') AS period,
-    SUM(production_w)      / ${KWH_DIVISOR} AS production_kwh,
-    SUM(export_w)          / ${KWH_DIVISOR} AS export_kwh,
-    SUM(import_w)          / ${KWH_DIVISOR} AS import_kwh,
-    SUM(self_consumption_w)/ ${KWH_DIVISOR} AS self_consumption_kwh,
-    SUM(battery_w)         / ${KWH_DIVISOR} AS battery_charge_kwh
-  FROM solarweb_readings
-  WHERE timestamp BETWEEN ? AND ?
-  GROUP BY period
-  ORDER BY period`;
-
-const YEARLY_SQL = `
-  SELECT
-    strftime('%Y', timestamp, 'unixepoch') AS period,
-    SUM(production_w)      / ${KWH_DIVISOR} AS production_kwh,
-    SUM(export_w)          / ${KWH_DIVISOR} AS export_kwh,
-    SUM(import_w)          / ${KWH_DIVISOR} AS import_kwh,
-    SUM(self_consumption_w)/ ${KWH_DIVISOR} AS self_consumption_kwh,
-    SUM(battery_w)         / ${KWH_DIVISOR} AS battery_charge_kwh
-  FROM solarweb_readings
-  WHERE timestamp BETWEEN ? AND ?
-  GROUP BY period
-  ORDER BY period`;
+const DAILY_SQL = energySql("strftime('%Y-%m-%d', timestamp, 'unixepoch')");
+const MONTHLY_SQL = energySql("strftime('%Y-%m', timestamp, 'unixepoch')");
+const YEARLY_SQL = energySql("strftime('%Y', timestamp, 'unixepoch')");
 
 function dateToTs(date: string, endOfDay = false): number {
   return Math.floor(

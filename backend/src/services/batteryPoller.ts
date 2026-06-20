@@ -19,6 +19,12 @@ export interface LiveEntry {
   values: MarstekValues | null;
   control: ControlParam[];
   error: string | null;
+  /**
+   * Wall-clock (ms) when `values` were last read SUCCESSFULLY. A failed poll
+   * carries the previous values forward but does NOT advance this, so callers can
+   * tell fresh telemetry from a stale carried-over snapshot. 0 = never read.
+   */
+  valuesAt: number;
 }
 
 /**
@@ -28,6 +34,14 @@ export interface LiveEntry {
  * history rows are still only written every `device.poll_interval_ms`.
  */
 export const LIVE_REFRESH_MS = 10_000;
+
+/**
+ * A live snapshot older than this (ms) is treated as stale: the control strategy
+ * must not act on it (it would drive a battery blind, e.g. discharging past its
+ * floor). Four missed polls — long enough to ride out a transient, short enough
+ * that an arbitrarily old SOC never keeps a device eligible.
+ */
+export const LIVE_STALE_MS = 4 * LIVE_REFRESH_MS;
 
 const latest = new Map<number, LiveEntry>();
 const timers = new Map<number, ReturnType<typeof setInterval>>();
@@ -119,6 +133,7 @@ async function pollDevice(
       values: result.values,
       control: [],
       error: null,
+      valuesAt: Date.now(),
     };
     latest.set(device.id, entry);
     return entry;
@@ -143,6 +158,9 @@ async function pollDevice(
       values: previous?.values ?? null,
       control: previous?.control ?? [],
       error: message,
+      // Keep the previous freshness stamp — a failed poll does not refresh it, so
+      // the carried-over values correctly age out as stale.
+      valuesAt: previous?.valuesAt ?? 0,
     };
     latest.set(device.id, entry);
     return entry;

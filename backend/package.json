@@ -7,6 +7,7 @@
   "scripts": {
     "check-types": "tsc --noEmit",
     "dev": "node --watch --experimental-strip-types --experimental-sqlite --env-file=../.env src/server.ts",
+    "dirigera-auth": "node --experimental-strip-types src/scripts/dirigeraAuth.ts",
     "start": "node --experimental-strip-types --experimental-sqlite --env-file=../.env src/server.ts",
     "test": "npm run test-only && npm run check-types",
     "test-only": "vitest run --coverage",
@@ -22,7 +23,8 @@
     "modbus-serial": "^8.0.25",
     "postgrator": "^8.0.0",
     "suncalc": "^1.9.0",
-    "typebox": "^1.2.9"
+    "typebox": "^1.2.9",
+    "undici": "^8.5.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

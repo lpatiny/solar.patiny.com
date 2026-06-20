@@ -12,9 +12,12 @@ const RealtimeResponse = Type.Object({
   production_w: Type.Number(),
   grid_w: Type.Number(),
   battery_w: Type.Number(),
+  // True household load: Fronius residual + Marstek net (see marstek_net_w).
   consumption_w: Type.Number(),
   battery_soc: Type.Number(),
   grid_injection_w: Type.Number(),
+  // Net Marstek AC power folded into consumption_w (discharge +, charge −); null if none report.
+  marstek_net_w: N,
   is_stale: Type.Boolean(),
   // Modbus connection state
   modbus_status: Type.Union([

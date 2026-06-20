@@ -483,6 +483,10 @@ async function syncDay(date: string): Promise<void> {
   const importMap = seriesMap(series, 'Consumption');
   const selfMap = seriesMap(series, 'Consumed directly');
   const battMap = seriesMap(series, 'Power to battery');
+  // Battery discharge (battery -> house). "Power to battery" only carries charging,
+  // so without this the scraped consumption omits battery-sourced load. The series
+  // name is logged above (settings.series) — confirm it if discharge stays 0.
+  const dischargeMap = seriesMap(series, 'Power from battery');
   const socMap = seriesMap(series, 'State of charge');
 
   // Use export series timestamps as anchor; all series share the same 5-min slots
@@ -494,6 +498,7 @@ async function syncDay(date: string): Promise<void> {
     const importW = importMap.get(tsMs) ?? 0;
     const selfW = selfMap.get(tsMs) ?? 0;
     const battW = battMap.get(tsMs) ?? 0;
+    const dischargeW = Math.max(dischargeMap.get(tsMs) ?? 0, 0);
     const socV = socMap.get(tsMs);
     return {
       timestamp: Math.floor(tsMs / 1000),
@@ -502,6 +507,7 @@ async function syncDay(date: string): Promise<void> {
       import_w: importW,
       self_consumption_w: selfW,
       battery_w: battW,
+      battery_discharge_w: dischargeW,
       battery_soc_pct: socV != null && socV > 0 ? socV : null,
     };
   });

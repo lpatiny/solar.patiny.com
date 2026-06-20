@@ -1,8 +1,9 @@
 import { db } from '../db/Database.ts';
 
-import { getLatest } from './batteryPoller.ts';
+import { LIVE_STALE_MS, getLatest } from './batteryPoller.ts';
 import type { ManualAction } from './marstekControl.ts';
 import { setMarstekUdpManual } from './marstekControl.ts';
+import type { MarstekValues } from './marstekRegisters.ts';
 import { getCurrentReading } from './poller.ts';
 import type { StrategyMode } from './strategyConfig.ts';
 import { readStrategyConfig } from './strategyConfig.ts';
@@ -55,18 +56,30 @@ let log: Logger = {
   error: (obj, msg) => process.stderr.write(`${msg ?? String(obj)}\n`),
 };
 
+/**
+ * The device's most recent snapshot, but only if it was read recently enough to
+ * act on. Stale telemetry (a string of failed polls) returns null so the strategy
+ * treats the device as unknown rather than steering it blind on old numbers.
+ */
+function freshValues(deviceId: number): MarstekValues | null {
+  const entry = getLatest(deviceId);
+  if (!entry || entry.valuesAt === 0) return null;
+  if (Date.now() - entry.valuesAt > LIVE_STALE_MS) return null;
+  return entry.values;
+}
+
 function chargingNow(deviceId: number): number {
-  const ac = getLatest(deviceId)?.values?.ac_power_w ?? null;
+  const ac = freshValues(deviceId)?.ac_power_w ?? null;
   return ac !== null && ac < 0 ? -ac : 0;
 }
 
 function dischargingNow(deviceId: number): number {
-  const ac = getLatest(deviceId)?.values?.ac_power_w ?? null;
+  const ac = freshValues(deviceId)?.ac_power_w ?? null;
   return ac !== null && ac > 0 ? ac : 0;
 }
 
 function socOf(deviceId: number): number | null {
-  return getLatest(deviceId)?.values?.soc_pct ?? null;
+  return freshValues(deviceId)?.soc_pct ?? null;
 }
 
 function shouldSend(decision: DeviceDecision, now: number): boolean {
@@ -90,7 +103,7 @@ async function apply(
   now: number,
 ): Promise<void> {
   if (!shouldSend(decision, now)) return;
-  await setMarstekUdpManual(
+  const confirmed = await setMarstekUdpManual(
     { host: device.host, port: device.port },
     {
       action: decision.action,
@@ -98,6 +111,14 @@ async function apply(
       durationS: decision.action === 'discharge' ? DISCHARGE_CD_S : undefined,
     },
   );
+  if (!confirmed) {
+    // The device did not confirm the change (set_result=false). Leave lastCommand
+    // untouched so the deadband does not suppress an immediate retry next cycle,
+    // and surface the rejection instead of reporting a phantom success.
+    throw new Error(
+      `device ${device.id} rejected ${decision.action} ${decision.powerW}W`,
+    );
+  }
   lastCommand.set(device.id, {
     action: decision.action,
     powerW: decision.powerW,
@@ -188,12 +209,26 @@ async function runCycle(): Promise<void> {
   }
 
   const byId = new Map(devices.map((d) => [d.id, d]));
-  await Promise.allSettled(
+  const outcomes = await Promise.allSettled(
     decisions.map((decision) => {
       const device = byId.get(decision.deviceId);
       return device ? apply(device, decision, now) : Promise.resolve();
     }),
   );
+  const notes = outcomes
+    .filter((outcome) => outcome.status === 'rejected')
+    .map((outcome) => String(outcome.reason));
+  if (notes.length > 0) {
+    log.error(notes.join('; '), '[strategy] command(s) not applied');
+  }
+  // A device with unknown SOC was dropped from charge/discharge eligibility; make
+  // that visible so a silent non-action is diagnosable rather than a bare 'idle'.
+  const unknownSoc = withState.filter((d) => d.soc === null);
+  if (unknownSoc.length > 0) {
+    notes.push(
+      `stale/unknown telemetry: ${unknownSoc.map((d) => d.name).join(', ')}`,
+    );
+  }
 
   status = {
     enabled: true,
@@ -202,7 +237,7 @@ async function runCycle(): Promise<void> {
     productionW: reading.production_w,
     gridInjectionW: reading.grid_injection_w,
     devices: decisions,
-    error: null,
+    error: notes.length > 0 ? notes.join('; ') : null,
   };
 }
 

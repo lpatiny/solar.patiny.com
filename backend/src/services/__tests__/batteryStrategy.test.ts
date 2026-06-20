@@ -55,6 +55,9 @@ test('moderate surplus is split so injection settles at the target', () => {
 });
 
 test('surplus is reconstructed from injection plus current charging', () => {
+  // Daytime full absorption: grid balanced (no import, no export) while the
+  // batteries soak up 500 W each of solar. That 1000 W IS real surplus, so the
+  // loop keeps charging 250 each.
   const { decisions } = decide(
     config,
     devices({ chargingW: 500 }, { chargingW: 500 }),
@@ -63,6 +66,39 @@ test('surplus is reconstructed from injection plus current charging', () => {
   );
 
   expect(decisions.map((d) => d.powerW)).toStrictEqual([250, 250]);
+});
+
+test('charging while importing is not mistaken for surplus; the loop discharges', () => {
+  // Night latch regression: no export, grid imports 1000 W while both batteries
+  // are (wrongly) charging 500 W each. The grid-sourced charge must NOT count as
+  // surplus — the loop must fall through to discharge and cover the 1000 W deficit
+  // (capped at 400 W each), instead of self-perpetuating the grid charging.
+  const { phase, decisions } = decide(
+    config,
+    devices({ soc: 80, chargingW: 500 }, { soc: 80, chargingW: 500 }),
+    0,
+    1000,
+    0,
+  );
+
+  expect(phase).toBe('discharge');
+  expect(decisions.map((d) => d.powerW)).toStrictEqual([400, 400]);
+});
+
+test('partial import nets out of the charge surplus', () => {
+  // Mid-ramp: charging 500 each (1000) while still importing 300 means PV exceeds
+  // the house load by 700 (1000 charged − 300 from grid), so the true exportable
+  // surplus is 700. surplus = inject 0 + charging 1000 − import 300 = 700; store
+  // 700 − 500 target = 200 → 100 each, which settles injection back to the target.
+  const { phase, decisions } = decide(
+    config,
+    devices({ chargingW: 500 }, { chargingW: 500 }),
+    0,
+    300,
+  );
+
+  expect(phase).toBe('charge');
+  expect(decisions.map((d) => d.powerW)).toStrictEqual([100, 100]);
 });
 
 test('charge takes priority even in force discharge mode', () => {

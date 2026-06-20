@@ -11,6 +11,8 @@ const params: BatteryForecastParams = {
   injectTargetW: 500,
   chargeMaxW: 500,
   chargeCeilingPct: 100,
+  dischargeMaxW: 400,
+  dischargeFloorPct: 20,
   perBatteryCapacityKwh: 5,
 };
 
@@ -107,4 +109,41 @@ test('a battery with unknown SOC is never charged', () => {
   );
 
   expect(series[0]?.slots[0]?.chargeW).toBe(0);
+});
+
+test('a post-solar deficit discharges every battery to cover it', () => {
+  // No production, 0.6 kWh consumed over 3 h = 200 W deficit; split 100 each
+  // (negative = discharging). 0.3 kWh each over 3 h drops a 5 kWh battery 6 points.
+  const series = simulateBatteryForecast(
+    [slot(0, 0, 0.6)],
+    batteries(50, 50),
+    params,
+  );
+
+  expect(series.map((s) => s.slots[0]?.chargeW)).toStrictEqual([-100, -100]);
+  expect(series.map((s) => s.slots[0]?.socEndPct)).toStrictEqual([44, 44]);
+});
+
+test('a battery at the discharge floor is excluded; the other covers the deficit', () => {
+  // deficit = 200 W; battery 1 is at the floor (20%) so only battery 2 discharges,
+  // taking the whole 200 W → SOC 50 → 38 (0.6 kWh of a 5 kWh pack).
+  const series = simulateBatteryForecast(
+    [slot(0, 0, 0.6)],
+    batteries(20, 50),
+    params,
+  );
+
+  expect(series[0]?.slots[0]?.chargeW).toBe(0);
+  expect(series[1]?.slots[0]?.chargeW).toBe(-200);
+  expect(series[1]?.slots[0]?.socEndPct).toBe(38);
+});
+
+test('a deficit with every battery at the floor leaves them idle', () => {
+  const series = simulateBatteryForecast(
+    [slot(0, 0, 0.6)],
+    batteries(20, 20),
+    params,
+  );
+
+  expect(series.map((s) => s.slots[0]?.chargeW)).toStrictEqual([0, 0]);
 });

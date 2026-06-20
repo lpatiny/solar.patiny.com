@@ -18,8 +18,20 @@ import type {
   DeviceRow,
   ReadingRow,
   SolarwebReadingRow,
+  TemperatureReadingRow,
+  TemperatureSensorRow,
   WeatherReadingRow,
 } from './rows.ts';
+
+/** An environment sample for one sensor at one instant. */
+export interface TemperatureInput {
+  id: string;
+  name: string;
+  temperature_c: number;
+  humidity_pct: number | null;
+  co2_ppm: number | null;
+  pm25_ugm3: number | null;
+}
 
 /** Fields needed to create or update a device (no id / created_at). */
 export interface DeviceInput {
@@ -46,6 +58,9 @@ export class Database {
   readonly #querySolarwebMonthly: TypedStatementSync<AggregatedSolarwebRow>;
   readonly #upsertWeatherReading: TypedStatementSync<WeatherReadingRow>;
   readonly #queryWeatherReadings: TypedStatementSync<WeatherReadingRow>;
+  readonly #upsertTemperatureSensor: TypedStatementSync<TemperatureSensorRow>;
+  readonly #insertTemperatureReading: TypedStatementSync<TemperatureReadingRow>;
+  readonly #queryTemperatureReadingsRaw: TypedStatementSync<TemperatureReadingRow>;
 
   private constructor(dbPath: string, sqlite: DatabaseSync) {
     this.#slowQueryLog = join(dirname(dbPath), 'slow-queries.log');
@@ -56,8 +71,8 @@ export class Database {
          timestamp, production_w, grid_w, battery_w, consumption_w, battery_soc,
          ac_power_w, voltage_a_v, voltage_b_v, voltage_c_v, frequency_hz,
          pv1_power_w, pv2_power_w, battery_charging_w, battery_discharging_w,
-         meter_power_w
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         meter_power_w, marstek_net_w
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     this.#queryReadingsRaw = this.#prepare<ReadingRow>(
@@ -98,14 +113,15 @@ export class Database {
 
     this.#upsertSolarwebReading = this.#prepare<SolarwebReadingRow>(
       `INSERT INTO solarweb_readings
-         (timestamp, production_w, export_w, import_w, self_consumption_w, battery_w, battery_soc_pct)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+         (timestamp, production_w, export_w, import_w, self_consumption_w, battery_w, battery_discharge_w, battery_soc_pct)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(timestamp) DO UPDATE SET
          production_w    = excluded.production_w,
          export_w        = excluded.export_w,
          import_w        = excluded.import_w,
          self_consumption_w = excluded.self_consumption_w,
          battery_w       = excluded.battery_w,
+         battery_discharge_w = excluded.battery_discharge_w,
          battery_soc_pct = COALESCE(excluded.battery_soc_pct, battery_soc_pct)`,
     );
 
@@ -114,8 +130,8 @@ export class Database {
          (timestamp / 3600) * 3600 AS bucket,
          AVG(production_w) AS production_w,
          AVG(import_w - export_w) AS grid_w,
-         AVG(battery_w) AS battery_w,
-         AVG(self_consumption_w + import_w) AS consumption_w,
+         AVG(-battery_w) AS battery_w,
+         AVG(self_consumption_w + import_w + battery_discharge_w) AS consumption_w,
          AVG(CASE WHEN battery_soc_pct > 0 THEN battery_soc_pct ELSE NULL END) AS battery_soc_max,
          NULL AS battery_soc_min
        FROM solarweb_readings
@@ -129,8 +145,8 @@ export class Database {
          (timestamp / 86400) * 86400 + 43200 AS bucket,
          AVG(production_w) AS production_w,
          AVG(import_w - export_w) AS grid_w,
-         AVG(battery_w) AS battery_w,
-         AVG(self_consumption_w + import_w) AS consumption_w,
+         AVG(-battery_w) AS battery_w,
+         AVG(self_consumption_w + import_w + battery_discharge_w) AS consumption_w,
          MAX(battery_soc_pct) AS battery_soc_max,
          MIN(battery_soc_pct) AS battery_soc_min
        FROM solarweb_readings
@@ -153,8 +169,8 @@ export class Database {
            (timestamp / 86400) * 86400 AS day_bucket,
            AVG(production_w) AS production_w,
            AVG(import_w - export_w) AS grid_w,
-           AVG(battery_w) AS battery_w,
-           AVG(self_consumption_w + import_w) AS consumption_w,
+           AVG(-battery_w) AS battery_w,
+           AVG(self_consumption_w + import_w + battery_discharge_w) AS consumption_w,
            MAX(battery_soc_pct) AS battery_soc_max,
            MIN(battery_soc_pct) AS battery_soc_min
          FROM solarweb_readings
@@ -178,6 +194,28 @@ export class Database {
 
     this.#queryWeatherReadings = this.#prepare<WeatherReadingRow>(
       `SELECT * FROM weather_readings WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp`,
+    );
+
+    this.#upsertTemperatureSensor = this.#prepare<TemperatureSensorRow>(
+      `INSERT INTO temperature_sensors (id, name) VALUES (?, ?)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
+    );
+
+    this.#insertTemperatureReading = this.#prepare<TemperatureReadingRow>(
+      `INSERT INTO temperature_readings
+         (timestamp, sensor_id, temperature_c, humidity_pct, co2_ppm, pm25_ugm3)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(sensor_id, timestamp) DO UPDATE SET
+         temperature_c = excluded.temperature_c,
+         humidity_pct  = excluded.humidity_pct,
+         co2_ppm       = excluded.co2_ppm,
+         pm25_ugm3     = excluded.pm25_ugm3`,
+    );
+
+    this.#queryTemperatureReadingsRaw = this.#prepare<TemperatureReadingRow>(
+      `SELECT timestamp, sensor_id, temperature_c, humidity_pct, co2_ppm, pm25_ugm3
+       FROM temperature_readings
+       WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp`,
     );
   }
 
@@ -234,6 +272,7 @@ export class Database {
     battery_charging_w: number | null,
     battery_discharging_w: number | null,
     meter_power_w: number | null,
+    marstek_net_w: number | null,
   ): void {
     this.#insertReading.run(
       timestamp,
@@ -252,6 +291,7 @@ export class Database {
       battery_charging_w,
       battery_discharging_w,
       meter_power_w,
+      marstek_net_w,
     );
   }
 
@@ -283,6 +323,7 @@ export class Database {
           row.import_w,
           row.self_consumption_w,
           row.battery_w,
+          row.battery_discharge_w,
           row.battery_soc_pct,
         );
       }
@@ -413,6 +454,108 @@ export class Database {
     ).all(from, to);
   }
 
+  /**
+   * Persist one temperature sample per sensor inside a single transaction,
+   * upserting each sensor's latest name.
+   * @param timestamp - Unix seconds shared by every sensor in this sample
+   * @param sensors - the sensors and their current temperatures
+   */
+  public recordTemperatures(
+    timestamp: number,
+    sensors: TemperatureInput[],
+  ): void {
+    if (sensors.length === 0) return;
+    this.#sqlite.exec('BEGIN');
+    try {
+      for (const sensor of sensors) {
+        this.#upsertTemperatureSensor.run(sensor.id, sensor.name);
+        this.#insertTemperatureReading.run(
+          timestamp,
+          sensor.id,
+          sensor.temperature_c,
+          sensor.humidity_pct,
+          sensor.co2_ppm,
+          sensor.pm25_ugm3,
+        );
+      }
+      this.#sqlite.exec('COMMIT');
+    } catch (error) {
+      this.#sqlite.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  public listTemperatureSensors(): TemperatureSensorRow[] {
+    return this.statement<TemperatureSensorRow>(
+      'SELECT id, name FROM temperature_sensors ORDER BY name',
+    ).all();
+  }
+
+  public queryTemperatureReadingsRaw(
+    from: number,
+    to: number,
+  ): TemperatureReadingRow[] {
+    return this.#queryTemperatureReadingsRaw.all(from, to);
+  }
+
+  public queryTemperatureReadingsHourly(
+    from: number,
+    to: number,
+  ): TemperatureReadingRow[] {
+    return this.#queryTemperatureAggregated(3600, from, to);
+  }
+
+  public queryTemperatureReadingsDaily(
+    from: number,
+    to: number,
+  ): TemperatureReadingRow[] {
+    // +43200 puts the daily bucket at local-ish noon, matching the other
+    // daily aggregations so points land mid-day on the axis.
+    return this.#queryTemperatureAggregated(86_400, from, to, 43_200);
+  }
+
+  public queryTemperatureReadingsMonthly(
+    from: number,
+    to: number,
+  ): TemperatureReadingRow[] {
+    return this.statement<TemperatureReadingRow>(
+      `SELECT
+         CAST(strftime('%s', strftime('%Y-%m-15', timestamp, 'unixepoch')) AS INTEGER) AS timestamp,
+         sensor_id,
+         AVG(temperature_c) AS temperature_c,
+         AVG(humidity_pct) AS humidity_pct,
+         AVG(co2_ppm) AS co2_ppm,
+         AVG(pm25_ugm3) AS pm25_ugm3
+       FROM temperature_readings
+       WHERE timestamp BETWEEN ? AND ?
+       GROUP BY strftime('%Y-%m', timestamp, 'unixepoch'), sensor_id
+       ORDER BY timestamp`,
+    ).all(from, to);
+  }
+
+  #queryTemperatureAggregated(
+    seconds: number,
+    from: number,
+    to: number,
+    offset = 0,
+  ): TemperatureReadingRow[] {
+    // `seconds`/`offset` are internal constants and must be SQL literals — a
+    // bound parameter binds as a float and breaks the integer bucketing.
+    return this.statement<TemperatureReadingRow>(
+      `SELECT
+         (timestamp / ${seconds}) * ${seconds} + ${offset} AS timestamp,
+         sensor_id,
+         AVG(temperature_c) AS temperature_c,
+         AVG(humidity_pct) AS humidity_pct,
+         AVG(co2_ppm) AS co2_ppm,
+         AVG(pm25_ugm3) AS pm25_ugm3
+       FROM temperature_readings
+       WHERE timestamp BETWEEN ? AND ?
+       GROUP BY (timestamp / ${seconds}), sensor_id
+       ORDER BY timestamp`,
+    ).all(from, to);
+  }
+
   public getOldestSolarwebTimestamp(): number | null {
     return (
       this.statement<{ ts: number | null }>(
@@ -427,6 +570,7 @@ export class Database {
       'solarweb_readings',
       'solarweb_synced_dates',
       'weather_readings',
+      'temperature_readings',
       'settings',
     ];
     const result: Record<string, number> = {};

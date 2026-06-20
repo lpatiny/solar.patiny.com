@@ -21,9 +21,16 @@ export interface RealtimeReading {
   production_w: number;
   grid_w: number;
   battery_w: number;
+  /** True household load: the Fronius residual plus the Marstek net (see marstek_net_w). */
   consumption_w: number;
   battery_soc: number;
   grid_injection_w: number;
+  /**
+   * Net Marstek AC power folded into consumption_w (discharge positive, charge
+   * negative). null when no Marstek device reports. Raw Fronius load =
+   * consumption_w − marstek_net_w.
+   */
+  marstek_net_w: number | null;
   is_stale: boolean;
   // Modbus connection state
   modbus_status: 'disabled' | 'ok' | 'error';

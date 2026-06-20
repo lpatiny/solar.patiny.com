@@ -12,6 +12,10 @@ import {
   startBatteryStrategy,
   stopBatteryStrategy,
 } from './services/batteryStrategy.ts';
+import {
+  startDirigeraPolling,
+  stopDirigeraPolling,
+} from './services/dirigeraService.ts';
 import { startPoller, stopPoller } from './services/poller.ts';
 
 const fastify = await buildApp();
@@ -51,11 +55,13 @@ fastify.log.info(
 startPoller(fastify.log);
 startBatteryPolling(fastify.log);
 startBatteryStrategy(fastify.log);
+startDirigeraPolling(fastify.log);
 
 fastify.addHook('onClose', () => {
   stopPoller();
   stopBatteryPolling();
   stopBatteryStrategy();
+  stopDirigeraPolling();
 });
 
 const port = process.env.PORT ? Number(process.env.PORT) : 60504;

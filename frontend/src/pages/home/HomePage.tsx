@@ -24,6 +24,8 @@ import NeighborExportCard from './components/NeighborExportCard.tsx';
 import PowerFlowCard from './components/PowerFlowCard.tsx';
 import type { FlowBattery } from './components/PowerFlowDiagram.tsx';
 import PowerFlowDiagram from './components/PowerFlowDiagram.tsx';
+import TemperatureHistoryChart from './components/TemperatureHistoryChart.tsx';
+import TemperaturesCard from './components/TemperaturesCard.tsx';
 import WeatherChart from './components/WeatherChart.tsx';
 import { sumMarstekPowerW, sumStoredKwh } from './components/batteryStatus.ts';
 import { useAuth } from './components/useAuth.ts';
@@ -399,6 +401,7 @@ export default function HomePage() {
         gridInjectionW={realtime?.grid_injection_w ?? 0}
         todayExportKwh={todayExport}
       />
+      <TemperaturesCard />
       {battery && (
         <BatteriesSummary
           homeSoc={battery.soc}
@@ -560,6 +563,8 @@ export default function HomePage() {
       <HistoryChart from={historyRange.from} to={historyRange.to} />
       <div style={{ marginTop: 16 }} />
       <WeatherChart from={historyRange.from} to={historyRange.to} />
+      <div style={{ marginTop: 16 }} />
+      <TemperatureHistoryChart from={historyRange.from} to={historyRange.to} />
       <div style={{ marginTop: 16 }} />
       <ChargingStrategyChart
         historyDate={new Date(historyRange.from * 1000)

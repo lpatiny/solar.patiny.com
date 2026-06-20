@@ -2,6 +2,7 @@
 import { db } from '../db/Database.ts';
 import type { RealtimeReading } from '../types.ts';
 
+import { getLatest } from './batteryPoller.ts';
 import { fetchPowerFlow } from './fronius.ts';
 import { fetchStationReadings } from './meteoStationService.ts';
 import { closeModbusConnections, readModbusData } from './modbusReader.ts';
@@ -47,6 +48,23 @@ export function getCurrentReading(): RealtimeReading | null {
   };
 }
 
+/**
+ * Sum the live Marstek AC power across enabled Marstek devices (discharge
+ * positive, charge negative). Returns null when no Marstek device has reported,
+ * so a Marstek-less or not-yet-polled system leaves consumption untouched.
+ */
+function sumMarstekNetW(): number | null {
+  const devices = db
+    .listDevices()
+    .filter((device) => device.enabled && device.type === 'marstek');
+  let sum: number | null = null;
+  for (const device of devices) {
+    const ac = getLatest(device.id)?.values?.ac_power_w ?? null;
+    if (ac !== null) sum = (sum ?? 0) + ac;
+  }
+  return sum;
+}
+
 async function poll(): Promise<void> {
   try {
     const [rest, modbus] = await Promise.all([
@@ -73,8 +91,17 @@ async function poll(): Promise<void> {
     const battery_discharging_w =
       modbus?.battery_discharging_w ?? Math.max(rest.battery_w, 0);
 
+    // The Fronius meter cannot see the plug-in Marstek, so its consumption_w is
+    // wrong by exactly their net power: charging inflates it, discharging deflates
+    // it. Fold in the live Marstek AC power (discharge positive) to recover the
+    // true household load. null when no Marstek reports.
+    const marstek_net_w = sumMarstekNetW();
+    const true_consumption_w = rest.consumption_w + (marstek_net_w ?? 0);
+
     currentReading = {
       ...rest,
+      consumption_w: true_consumption_w,
+      marstek_net_w,
       battery_soc: lastValidSoc ?? 0,
       grid_injection_w,
       is_stale: false,
@@ -111,6 +138,7 @@ async function poll(): Promise<void> {
       battery_charging_w,
       battery_discharging_w,
       modbus?.meter_power_w ?? null,
+      marstek_net_w,
     );
   } catch (error) {
     log.error(error, '[poller] Fronius poll failed');
