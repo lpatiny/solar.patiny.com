@@ -116,6 +116,19 @@ export default function DeviceScanner({
             <span style={{ minWidth: 90 }}>{item.device}</span>
             <span style={{ ...monoStyle, minWidth: 110 }}>{item.ble_mac}</span>
             <span style={{ ...monoStyle, minWidth: 110 }}>{item.ip}</span>
+            {item.mac_conflict && (
+              <Tag
+                minimal
+                intent={Intent.DANGER}
+                title={
+                  item.arp_mac
+                    ? `Two units resolve to the same MAC ${item.arp_mac} (real L2 collision)`
+                    : `Duplicate reported Wi-Fi MAC ${item.wifi_mac} (ARP unavailable — unconfirmed)`
+                }
+              >
+                MAC conflict{item.arp_mac ? ` · ${item.arp_mac}` : ''}
+              </Tag>
+            )}
             {existing ? (
               <span style={{ color: 'var(--text-secondary)' }}>
                 → {existing.name}

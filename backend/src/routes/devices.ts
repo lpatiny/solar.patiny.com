@@ -25,6 +25,7 @@ import {
   MAX_SCHEDULE_SLOTS,
   WEEKDAYS,
 } from '../services/marstekRegisters.ts';
+import { annotateMacConflicts, readArpTable } from '../services/arpTable.ts';
 import { discoverMarstekDevices } from '../services/marstekUdpTransport.ts';
 import type { FastifyTyped } from '../types.ts';
 
@@ -60,6 +61,10 @@ const DiscoveredDevice = Type.Object({
   wifi_mac: Type.String(),
   wifi_name: Type.String(),
   ip: Type.String(),
+  /** Real MAC the host's ARP table resolved for this IP (null if unknown). */
+  arp_mac: Nullable(Type.String()),
+  /** True when this device shares its effective MAC with another discovered one. */
+  mac_conflict: Type.Boolean(),
 });
 
 const BatteryValues = Type.Object({
@@ -184,11 +189,15 @@ export default async function deviceRoutes(fastify: FastifyTyped) {
       schema: {
         tags: ['devices'],
         summary:
-          'Broadcast-discover Marstek devices on the LAN (ble_mac + IP).',
+          'Broadcast-discover Marstek devices on the LAN; flag duplicate MACs.',
+        description:
+          'Discovers Marstek units and cross-checks each IP against the host ARP ' +
+          'table. `mac_conflict` is true when two units resolve to one MAC: a real ' +
+          'L2 collision if `arp_mac` match, otherwise a firmware-reported artifact.',
         response: { 200: Type.Array(DiscoveredDevice) },
       },
     },
-    async () => discoverMarstekDevices(),
+    async () => annotateMacConflicts(await discoverMarstekDevices(), readArpTable()),
   );
 
   fastify.post(

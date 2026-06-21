@@ -29,11 +29,16 @@ export interface LiveEntry {
 
 /**
  * How often the live in-memory snapshot is refreshed, independent of how often a
- * row is persisted to history. This is the Marstek Open API floor (≤1 query/10s
- * per device), so the display can refresh as fast as the hardware allows while
- * history rows are still only written every `device.poll_interval_ms`.
+ * row is persisted to history. The Marstek Open API floor is ≤1 query/10s per
+ * device, and that whole budget is shared with the strategy loop's command
+ * writes (both go through the same per-device UDP queue). Polling at exactly the
+ * 10s floor consumed 100% of it, so every command write queued behind a growing
+ * read backlog and was delivered minutes late — the battery then held a stale
+ * discharge setpoint. Refreshing at 20s leaves a free admission slot every 20s
+ * for command writes while keeping reads well under the hardware floor; SOC
+ * changes slowly enough that a 20s display cadence is imperceptible.
  */
-export const LIVE_REFRESH_MS = 10_000;
+export const LIVE_REFRESH_MS = 20_000;
 
 /**
  * A live snapshot older than this (ms) is treated as stale: the control strategy

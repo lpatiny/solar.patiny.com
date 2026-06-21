@@ -1,4 +1,5 @@
 import { db } from '../db/Database.ts';
+import { withTimeout } from '../utils/withTimeout.ts';
 
 import { LIVE_STALE_MS, getLatest } from './batteryPoller.ts';
 import type { ManualAction } from './marstekControl.ts';
@@ -17,10 +18,25 @@ interface Logger {
 
 /** Don't re-issue a charge setpoint unless it moves by more than this (W). */
 const SETPOINT_DEADBAND_W = 50;
-/** Self-expiring countdown for a discharge command (s); the loop refreshes it. */
-const DISCHARGE_CD_S = 600;
+/**
+ * Self-expiring countdown for a discharge command (s). This is the fail-safe: if
+ * the loop ever stops delivering commands (process down, UDP queue saturated),
+ * the battery STOPS discharging this many seconds after the last command instead
+ * of dumping into the BYD/grid. Must comfortably exceed {@link DISCHARGE_REFRESH_MS}
+ * plus a missed cycle and the {@link APPLY_TIMEOUT_MS} write latency, so a healthy
+ * loop always renews it before it expires.
+ */
+const DISCHARGE_CD_S = 150;
 /** Refresh a held discharge command once it is older than this (ms). */
-const DISCHARGE_REFRESH_MS = 240_000;
+const DISCHARGE_REFRESH_MS = 60_000;
+/**
+ * Abandon a command write that cannot drain within this window (ms). The
+ * per-device UDP queue paces requests ≥10s apart, so a healthy write lands in
+ * ≤~14s; anything beyond this means the queue is saturated. Abandoning keeps the
+ * control loop period bounded (and its status fresh) instead of letting it grow
+ * to the full backlog depth — the un-confirmed write is simply retried next cycle.
+ */
+const APPLY_TIMEOUT_MS = 20_000;
 
 /** In-memory snapshot of the most recent control cycle, for the API/UI. */
 export interface StrategyStatus {
@@ -212,7 +228,16 @@ async function runCycle(): Promise<void> {
   const outcomes = await Promise.allSettled(
     decisions.map((decision) => {
       const device = byId.get(decision.deviceId);
-      return device ? apply(device, decision, now) : Promise.resolve();
+      if (!device) return Promise.resolve();
+      // Bound how long a single command write can block the cycle: a saturated
+      // UDP queue must not stretch the loop period (and stale its status) to the
+      // backlog depth. A timed-out write leaves lastCommand untouched, so it is
+      // retried next cycle once the queue drains.
+      return withTimeout(
+        apply(device, decision, now),
+        APPLY_TIMEOUT_MS,
+        `device ${decision.deviceId} command write timed out (UDP queue saturated)`,
+      );
     }),
   );
   const notes = outcomes

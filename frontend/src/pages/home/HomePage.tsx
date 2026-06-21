@@ -16,6 +16,7 @@ import BatteriesTab from './components/BatteriesTab.tsx';
 import ChargingStrategyChart from './components/ChargingStrategyChart.tsx';
 import ConfigCard from './components/ConfigCard.tsx';
 import DayPowerChart from './components/DayPowerChart.tsx';
+import DirigeraTab from './components/DirigeraTab.tsx';
 import ElectricalCard from './components/ElectricalCard.tsx';
 import EnergyChart from './components/EnergyChart.tsx';
 import HeaderAuth from './components/HeaderAuth.tsx';
@@ -636,6 +637,7 @@ export default function HomePage() {
         <Tab id="batteries" title="Batteries" panel={<BatteriesTab />} />
         <Tab id="history" title="History" panel={historyPanel} />
         <Tab id="analysis" title="Analysis" panel={<AnalysisTab />} />
+        <Tab id="dirigera" title="Dirigera" panel={<DirigeraTab />} />
         {authenticated && (
           <Tab id="config" title="Configuration" panel={configPanel} />
         )}

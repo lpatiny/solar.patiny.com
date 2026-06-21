@@ -1,11 +1,11 @@
 /* eslint-disable camelcase, @typescript-eslint/naming-convention -- API/JSON fields use snake_case */
-import { Agent, request } from 'undici';
-
 import { db } from '../db/Database.ts';
+
+import type { DirigeraDevice } from './dirigeraClient.ts';
+import { fetchDevices, isConfigured } from './dirigeraClient.ts';
+import { setDevices } from './dirigeraDevices.ts';
 import { computeUnavailableSensors } from './sensorAvailability.ts';
 
-const DIRIGERA_HOST = process.env.DIRIGERA_HOST ?? '';
-const DIRIGERA_TOKEN = process.env.DIRIGERA_TOKEN ?? '';
 const POLL_INTERVAL_MS = Number(
   process.env.DIRIGERA_POLL_INTERVAL_MS ?? 60_000,
 );
@@ -15,27 +15,6 @@ const PERSIST_INTERVAL_MS = Number(
   process.env.DIRIGERA_PERSIST_INTERVAL_MS ?? 5 * 60_000,
 );
 const STALE_THRESHOLD_MS = 5 * 60_000;
-
-// The DIRIGERA hub serves its local API over HTTPS with a self-signed
-// certificate, so certificate verification must be disabled for this host. The
-// dispatcher is scoped to the DIRIGERA requests only — it never affects the
-// global fetch used for Fronius / SolarWeb / MeteoSwiss.
-const insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
-
-interface DirigeraAttributes {
-  customName?: string;
-  currentTemperature?: number | null;
-  currentRH?: number | null;
-  currentCO2?: number | null;
-  currentPM25?: number | null;
-}
-
-interface DirigeraDevice {
-  id: string;
-  isReachable?: boolean;
-  attributes?: DirigeraAttributes;
-  room?: { name?: string } | null;
-}
 
 export interface TemperatureSensor {
   id: string;
@@ -74,11 +53,6 @@ let log: Logger = {
   error: (obj, msg) => process.stderr.write(`${msg ?? String(obj)}\n`),
 };
 
-/** Whether the DIRIGERA hub host and access token are both configured. */
-export function isConfigured(): boolean {
-  return DIRIGERA_HOST !== '' && DIRIGERA_TOKEN !== '';
-}
-
 function sensorName(device: DirigeraDevice): string {
   const custom = device.attributes?.customName?.trim();
   if (custom) return custom;
@@ -112,23 +86,6 @@ function extractTemperatures(devices: DirigeraDevice[]): TemperatureSensor[] {
   return sensors;
 }
 
-async function fetchDevices(): Promise<DirigeraDevice[]> {
-  // Use undici's own request (not the global fetch) so the Agent dispatcher
-  // types stay consistent and to avoid the self-signed cert being verified.
-  const { statusCode, body } = await request(
-    `https://${DIRIGERA_HOST}:8443/v1/devices`,
-    {
-      dispatcher: insecureAgent,
-      headers: { authorization: `Bearer ${DIRIGERA_TOKEN}` },
-    },
-  );
-  if (statusCode !== 200) {
-    await body.dump();
-    throw new Error(`DIRIGERA API error: ${statusCode}`);
-  }
-  return (await body.json()) as DirigeraDevice[];
-}
-
 /**
  * Latest cached temperature readings, served from memory.
  * @returns the temperature snapshot, with `is_stale` true when the last
@@ -150,8 +107,10 @@ export function getTemperatures(): TemperatureSnapshot {
 async function poll(): Promise<void> {
   try {
     const devices = await fetchDevices();
-    latestSensors = extractTemperatures(devices);
     lastPollAt = Date.now();
+    // One hub fetch feeds both the temperature card and the device status page.
+    setDevices(devices, lastPollAt);
+    latestSensors = extractTemperatures(devices);
 
     if (
       latestSensors.length > 0 &&

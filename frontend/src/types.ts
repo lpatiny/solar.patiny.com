@@ -21,6 +21,10 @@ export interface DiscoveredDevice {
   wifi_mac: string;
   wifi_name: string;
   ip: string;
+  /** Real MAC the host's ARP table resolved for this IP (null if unknown). */
+  arp_mac: string | null;
+  /** True when this device shares its effective MAC with another discovered one. */
+  mac_conflict: boolean;
 }
 
 /** Decoded battery measurements (null when a register block could not be read). */
