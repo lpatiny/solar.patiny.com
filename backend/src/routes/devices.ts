@@ -6,6 +6,7 @@ import { requireAuth } from '../auth.ts';
 import type { DeviceInput } from '../db/Database.ts';
 import { db } from '../db/Database.ts';
 import type { BatteryReadingRow, DeviceRow } from '../db/rows.ts';
+import { annotateMacConflicts, readArpTable } from '../services/arpTable.ts';
 import {
   LIVE_REFRESH_MS,
   getLatest,
@@ -25,7 +26,6 @@ import {
   MAX_SCHEDULE_SLOTS,
   WEEKDAYS,
 } from '../services/marstekRegisters.ts';
-import { annotateMacConflicts, readArpTable } from '../services/arpTable.ts';
 import { discoverMarstekDevices } from '../services/marstekUdpTransport.ts';
 import type { FastifyTyped } from '../types.ts';
 

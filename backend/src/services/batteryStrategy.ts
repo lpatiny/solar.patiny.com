@@ -304,3 +304,29 @@ export function stopBatteryStrategy(): void {
 export function getStrategyStatus(): StrategyStatus {
   return status;
 }
+
+/** The last command confirmed-sent to a device, as tracked by the loop. */
+export interface LastCommandInfo {
+  deviceId: number;
+  action: ManualAction;
+  powerW: number;
+  sentAt: number;
+  ageMs: number;
+}
+
+/**
+ * The last command the loop confirmed-sent to each device, for debugging why a
+ * battery is (or is not) doing what the latest decision asked. A device absent
+ * here has never had a command confirmed since the loop started.
+ * @returns one entry per device with a confirmed command
+ */
+export function getLastCommands(): LastCommandInfo[] {
+  const now = Date.now();
+  return [...lastCommand.entries()].map(([deviceId, state]) => ({
+    deviceId,
+    action: state.action,
+    powerW: state.powerW,
+    sentAt: state.sentAt,
+    ageMs: now - state.sentAt,
+  }));
+}

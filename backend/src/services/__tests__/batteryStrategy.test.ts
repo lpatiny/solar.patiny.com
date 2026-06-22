@@ -312,3 +312,46 @@ test('unknown SOC stops charging and stops discharging', () => {
   const forcing = decide(forceConfig, devices({ soc: null }), 0, 600);
   expect(forcing.decisions[0]).toMatchObject({ action: 'stop' });
 });
+
+// --- Diagnostics (the apply-nothing debug view's single source of truth) ---
+
+test('diagnostics expose the charge math when charging', () => {
+  // surplus = injection 2600 - target 500 = 2100, capped at 2*500 = 1000.
+  const { diagnostics } = decide(config, devices({}, {}), 2600, 0);
+
+  expect(diagnostics.surplusW).toBe(2600);
+  expect(diagnostics.chargeEligibleCount).toBe(2);
+  expect(diagnostics.chargeCapW).toBe(1000);
+  expect(diagnostics.desiredChargeW).toBe(1000);
+  expect(diagnostics.perChargeW).toBe(500);
+});
+
+test('diagnostics are populated even when discharging (both branches computed)', () => {
+  const { phase, diagnostics } = decide(config, devices({}, {}), 0, 600, 0);
+
+  expect(phase).toBe('discharge');
+  // gridBalanceExcludingMarstek = 0 discharging + 600 import - 0 injection = 600.
+  expect(diagnostics.gridBalanceExcludingMarstekW).toBe(600);
+  expect(diagnostics.dischargeTargetW).toBe(600);
+  expect(diagnostics.perDischargeW).toBe(300);
+  // The charge side is still computed for the debug view.
+  expect(diagnostics.surplusW).toBe(-600);
+  expect(diagnostics.perChargeW).toBe(0);
+});
+
+test('charging wins while one battery is discharging and another charging', () => {
+  // Mirrors the production incident: ~4.5 kW exported with one battery still
+  // discharging — surplus is huge, so the loop must command both to charge.
+  const { phase, decisions, diagnostics } = decide(
+    config,
+    devices({ soc: 23, dischargingW: 301 }, { soc: 46, chargingW: 697 }),
+    4510,
+    0,
+  );
+
+  expect(phase).toBe('charge');
+  // surplus = injection 4510 + charging 697 - import 0 = 5207.
+  expect(diagnostics.surplusW).toBe(5207);
+  expect(decisions.map((d) => d.action)).toStrictEqual(['charge', 'charge']);
+  expect(decisions.map((d) => d.powerW)).toStrictEqual([500, 500]);
+});

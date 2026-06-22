@@ -19,6 +19,40 @@ export interface DeviceDecision {
   sent: boolean;
 }
 
+/**
+ * The intermediate quantities {@link decide} computed this cycle, surfaced so a
+ * debug endpoint can explain exactly WHY the loop chose to charge, discharge, or
+ * idle — without re-deriving (and risking drifting from) the decision math.
+ */
+export interface DecisionDiagnostics {
+  /** Sum of charge power across all devices right now (W, ≥0). */
+  totalChargingW: number;
+  /** Sum of discharge power across all devices right now (W, ≥0). */
+  totalDischargingW: number;
+  /** Reconstructed exportable solar surplus: injection + totalCharging − import. */
+  surplusW: number;
+  /** Number of devices eligible to charge (SOC known and below the ceiling). */
+  chargeEligibleCount: number;
+  /** Fleet charge cap (chargeMaxW × eligible count). */
+  chargeCapW: number;
+  /** Surplus above the injection target, clamped to the charge cap. */
+  desiredChargeW: number;
+  /** Per-battery charge setpoint candidate (0 if below {@link MIN_CHARGE_W}). */
+  perChargeW: number;
+  /** Grid balance excluding the Marstek: totalDischarging + import − injection. */
+  gridBalanceExcludingMarstekW: number;
+  /** Discharge target this cycle (mode-dependent). */
+  dischargeTargetW: number;
+  /** Number of devices eligible to discharge (SOC known and above the floor). */
+  dischargeEligibleCount: number;
+  /** Fleet discharge cap (dischargeMaxW × eligible count). */
+  dischargeCapW: number;
+  /** Target clamped to the discharge cap. */
+  desiredDischargeW: number;
+  /** Per-battery discharge setpoint candidate (0 if below {@link MIN_DISCHARGE_W}). */
+  perDischargeW: number;
+}
+
 /** A device's identity and current state, as fed to {@link decide}. */
 export interface DeviceState {
   id: number;
@@ -73,7 +107,11 @@ export function decide(
   injectionW: number,
   importW: number,
   bydW = 0,
-): { phase: Phase; decisions: DeviceDecision[] } {
+): {
+  phase: Phase;
+  decisions: DeviceDecision[];
+  diagnostics: DecisionDiagnostics;
+} {
   const chargeEligible = devices.filter(
     (device) => device.soc !== null && device.soc < config.chargeCeilingPct,
   );
@@ -103,23 +141,8 @@ export function decide(
           Math.round(desiredCharge / chargeEligible.length),
         )
       : 0;
-  if (perCharge >= MIN_CHARGE_W) {
-    const decisions = devices.map<DeviceDecision>((device) => {
-      const canCharge =
-        device.soc !== null && device.soc < config.chargeCeilingPct;
-      return {
-        deviceId: device.id,
-        name: device.name,
-        socPct: device.soc,
-        action: canCharge ? 'charge' : 'stop',
-        powerW: canCharge ? perCharge : 0,
-        sent: false,
-      };
-    });
-    return { phase: 'charge', decisions };
-  }
 
-  // Otherwise discharge. The grid balance excluding the Marstek
+  // Discharge math. The grid balance excluding the Marstek
   // (totalDischarging + import − injection) is what the grid would carry if the
   // Marstek stopped — it is stable against the Marstek's own discharge, so the
   // target never collapses as the Marstek ramps (no oscillation). In `cover` mode
@@ -127,6 +150,7 @@ export function decide(
   // deficit: bydW cancels the BYD's own flow, so the Marstek covers the house and
   // never the BYD's charging (no battery-to-battery transfer). In `force` mode we
   // add the injection limit instead, so the fleet exports up to that limit.
+  // Computed unconditionally (even when charging wins) so diagnostics are complete.
   const dischargeEligible = devices.filter(
     (device) => device.soc !== null && device.soc > config.dischargeFloorPct,
   );
@@ -144,8 +168,40 @@ export function decide(
           Math.round(desiredDischarge / dischargeEligible.length),
         )
       : 0;
-  const discharging = perDischarge >= MIN_DISCHARGE_W;
 
+  const diagnostics: DecisionDiagnostics = {
+    totalChargingW: totalCharging,
+    totalDischargingW: totalDischarging,
+    surplusW: surplus,
+    chargeEligibleCount: chargeEligible.length,
+    chargeCapW: chargeCap,
+    desiredChargeW: desiredCharge,
+    perChargeW: perCharge,
+    gridBalanceExcludingMarstekW: gridBalanceExcludingMarstek,
+    dischargeTargetW: target,
+    dischargeEligibleCount: dischargeEligible.length,
+    dischargeCapW: dischargeCap,
+    desiredDischargeW: desiredDischarge,
+    perDischargeW: perDischarge,
+  };
+
+  if (perCharge >= MIN_CHARGE_W) {
+    const decisions = devices.map<DeviceDecision>((device) => {
+      const canCharge =
+        device.soc !== null && device.soc < config.chargeCeilingPct;
+      return {
+        deviceId: device.id,
+        name: device.name,
+        socPct: device.soc,
+        action: canCharge ? 'charge' : 'stop',
+        powerW: canCharge ? perCharge : 0,
+        sent: false,
+      };
+    });
+    return { phase: 'charge', decisions, diagnostics };
+  }
+
+  const discharging = perDischarge >= MIN_DISCHARGE_W;
   const decisions = devices.map<DeviceDecision>((device) => {
     const canDischarge =
       device.soc !== null &&
@@ -160,5 +216,5 @@ export function decide(
       sent: false,
     };
   });
-  return { phase: discharging ? 'discharge' : 'idle', decisions };
+  return { phase: discharging ? 'discharge' : 'idle', decisions, diagnostics };
 }
