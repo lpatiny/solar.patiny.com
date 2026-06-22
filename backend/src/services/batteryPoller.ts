@@ -1,11 +1,10 @@
 /* eslint-disable camelcase, @typescript-eslint/naming-convention -- DB and reading fields use snake_case */
-import type { DeviceInput } from '../db/Database.ts';
 import { db } from '../db/Database.ts';
 import type { DeviceRow } from '../db/rows.ts';
 
+import { healDeviceHosts } from './marstekHostHeal.ts';
 import type { ControlParam, MarstekValues } from './marstekRegisters.ts';
 import { readMarstekUdp } from './marstekUdpClient.ts';
-import { discoverMarstekDevices } from './marstekUdpTransport.ts';
 
 interface Logger {
   info: (msg: string) => void;
@@ -48,71 +47,29 @@ export const LIVE_REFRESH_MS = 20_000;
  */
 export const LIVE_STALE_MS = 4 * LIVE_REFRESH_MS;
 
+/**
+ * Cap on the per-device poll backoff (ms). A device that keeps failing is polled
+ * no faster than this — so an unresponsive/crashed Marstek (or a struggling
+ * ESP32 that our polling rate itself knocks over) is left alone instead of being
+ * hammered every {@link LIVE_REFRESH_MS} with reads plus failure-triggered
+ * discovery. The first successful poll resets the cadence back to LIVE_REFRESH_MS.
+ */
+export const MAX_POLL_BACKOFF_MS = 5 * 60_000;
+
 const latest = new Map<number, LiveEntry>();
-const timers = new Map<number, ReturnType<typeof setInterval>>();
+const timers = new Map<number, ReturnType<typeof setTimeout>>();
+// Consecutive failed polls per device, used to back off the poll cadence. Reset
+// to 0 (entry removed) on the first successful poll.
+const consecutiveFailures = new Map<number, number>();
 // Wall-clock (ms) of the last poll that was written to the history table, per
 // device. Used to throttle DB writes to `poll_interval_ms` while the live cache
 // keeps refreshing every LIVE_REFRESH_MS.
 const lastPersistedAt = new Map<number, number>();
 
-// Don't broadcast-discover more often than this, even if several devices fail.
-const DISCOVERY_MIN_INTERVAL_MS = 15_000;
-let lastDiscoveryAt = 0;
-
 let log: Logger = {
   info: (msg) => process.stdout.write(`${msg}\n`),
   error: (obj, msg) => process.stderr.write(`${msg ?? String(obj)}\n`),
 };
-
-function toDeviceInput(device: DeviceRow): DeviceInput {
-  return {
-    name: device.name,
-    type: device.type,
-    host: device.host,
-    port: device.port,
-    ble_mac: device.ble_mac,
-    enabled: device.enabled === 1,
-    poll_interval_ms: device.poll_interval_ms,
-  };
-}
-
-function subnetBroadcast(host: string): string | undefined {
-  const parts = host.split('.');
-  if (parts.length !== 4) return undefined;
-  return `${parts[0]}.${parts[1]}.${parts[2]}.255`;
-}
-
-/**
- * Self-heal device hosts by ble_mac: broadcast-discover and update the stored
- * host of every device whose ble_mac now answers at a different IP (DHCP moved
- * it). One discovery heals all moved devices. Throttled globally.
- * @param trigger - the device whose failed poll triggered the heal
- * @returns the trigger device's new host if it moved, else null
- */
-async function healDeviceHosts(trigger: DeviceRow): Promise<string | null> {
-  const now = Date.now();
-  if (now - lastDiscoveryAt < DISCOVERY_MIN_INTERVAL_MS) return null;
-  lastDiscoveryAt = now;
-
-  const found = await discoverMarstekDevices({
-    port: trigger.port,
-    broadcastAddress: subnetBroadcast(trigger.host),
-  });
-  const ipByMac = new Map(found.map((info) => [info.ble_mac, info.ip]));
-
-  let triggerNewHost: string | null = null;
-  for (const device of db.listDevices()) {
-    if (!device.ble_mac) continue;
-    const ip = ipByMac.get(device.ble_mac);
-    if (!ip || ip === device.host) continue;
-    db.updateDevice(device.id, { ...toDeviceInput(device), host: ip });
-    log.info(
-      `device ${device.id} (${device.ble_mac}) host healed ${device.host} -> ${ip}`,
-    );
-    if (device.id === trigger.id) triggerNewHost = ip;
-  }
-  return triggerNewHost;
-}
 
 async function pollDevice(
   device: DeviceRow,
@@ -149,7 +106,7 @@ async function pollDevice(
     // the device from the DB, so no immediate retry is needed.)
     if (device.ble_mac) {
       try {
-        const healed = await healDeviceHosts(device);
+        const healed = await healDeviceHosts(device, log);
         if (healed) message += ` — host self-healed to ${healed}`;
       } catch {
         // ignore discovery errors; keep the original poll error
@@ -172,23 +129,70 @@ async function pollDevice(
   }
 }
 
+/**
+ * Delay before a device's next poll: {@link LIVE_REFRESH_MS} when healthy, then
+ * doubling per consecutive failure (40s, 80s, …) capped at
+ * {@link MAX_POLL_BACKOFF_MS}. Exported for the debug view.
+ * @param deviceId - device id
+ * @returns the delay in ms until the next poll
+ */
+export function nextPollDelay(deviceId: number): number {
+  return pollDelayForFailures(consecutiveFailures.get(deviceId) ?? 0);
+}
+
+/**
+ * The poll delay (ms) for a given consecutive-failure count: base cadence when
+ * healthy, doubling per failure, capped. Pure, so it is unit-tested directly.
+ * @param failures - consecutive failed polls (0 = healthy)
+ * @returns the delay in ms until the next poll
+ */
+export function pollDelayForFailures(failures: number): number {
+  if (failures <= 0) return LIVE_REFRESH_MS;
+  return Math.min(LIVE_REFRESH_MS * 2 ** failures, MAX_POLL_BACKOFF_MS);
+}
+
+/**
+ * How many consecutive polls have failed for a device (0 = healthy / last poll
+ * succeeded). Exported so the debug view can show a backed-off device.
+ * @param deviceId - device id
+ * @returns the consecutive-failure count
+ */
+export function getPollFailures(deviceId: number): number {
+  return consecutiveFailures.get(deviceId) ?? 0;
+}
+
 function scheduleDevice(device: DeviceRow): void {
-  void pollDevice(device, true);
-  const timer = setInterval(() => {
+  const tick = async (): Promise<void> => {
     const current = db.getDevice(device.id);
-    if (!current?.enabled) return;
-    const last = lastPersistedAt.get(current.id) ?? 0;
-    const persist = Date.now() - last >= current.poll_interval_ms;
-    void pollDevice(current, persist);
-  }, LIVE_REFRESH_MS);
-  timers.set(device.id, timer);
+    if (current?.enabled) {
+      const last = lastPersistedAt.get(current.id) ?? 0;
+      const persist = Date.now() - last >= current.poll_interval_ms;
+      const entry = await pollDevice(current, persist);
+      if (entry.error) {
+        consecutiveFailures.set(
+          current.id,
+          (consecutiveFailures.get(current.id) ?? 0) + 1,
+        );
+      } else {
+        consecutiveFailures.delete(current.id);
+      }
+    }
+    // Reschedule against the device id even while disabled (at the base cadence),
+    // so a later re-enable resumes polling — matching the prior setInterval.
+    timers.set(
+      device.id,
+      setTimeout(() => void tick(), nextPollDelay(device.id)),
+    );
+  };
+  void tick();
 }
 
 /** Stop all per-device timers and reload the enabled device list from the DB. */
 export function reloadDevices(): void {
-  for (const timer of timers.values()) clearInterval(timer);
+  for (const timer of timers.values()) clearTimeout(timer);
   timers.clear();
   lastPersistedAt.clear();
+  consecutiveFailures.clear();
   const devices = db
     .listDevices()
     .filter((d) => d.enabled && d.type === 'marstek');
@@ -207,8 +211,9 @@ export function startBatteryPolling(logger: Logger): void {
 
 /** Stop all battery polling timers. */
 export function stopBatteryPolling(): void {
-  for (const timer of timers.values()) clearInterval(timer);
+  for (const timer of timers.values()) clearTimeout(timer);
   timers.clear();
+  consecutiveFailures.clear();
 }
 
 /**

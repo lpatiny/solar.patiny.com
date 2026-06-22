@@ -32,6 +32,8 @@ const DeviceSchema = Type.Object({
   used_charging_w: Type.Number(),
   used_discharging_w: Type.Number(),
   poll_error: Type.Union([Type.String(), Type.Null()]),
+  poll_failures: Type.Number(),
+  next_poll_ms: Type.Number(),
 });
 
 const DiagnosticsSchema = Type.Object({
@@ -158,6 +160,8 @@ export default async function debugStrategyRoutes(fastify: FastifyTyped) {
           used_charging_w: d.usedChargingW,
           used_discharging_w: d.usedDischargingW,
           poll_error: d.pollError,
+          poll_failures: d.pollFailures,
+          next_poll_ms: d.nextPollMs,
         })),
         phase,
         decisions: decisions.map((decision) => ({

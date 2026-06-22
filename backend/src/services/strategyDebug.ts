@@ -1,6 +1,11 @@
 import { db } from '../db/Database.ts';
 
-import { LIVE_STALE_MS, getLatest } from './batteryPoller.ts';
+import {
+  LIVE_STALE_MS,
+  getLatest,
+  getPollFailures,
+  nextPollDelay,
+} from './batteryPoller.ts';
 import type { LastCommandInfo } from './batteryStrategy.ts';
 import { getLastCommands } from './batteryStrategy.ts';
 import { getCurrentReading } from './poller.ts';
@@ -33,6 +38,10 @@ export interface DeviceDebug {
   usedDischargingW: number;
   /** Last error from polling this device, if any. */
   pollError: string | null;
+  /** Consecutive failed polls (0 = healthy); drives the poll backoff. */
+  pollFailures: number;
+  /** Delay (ms) until the next poll — grows while the device keeps failing. */
+  nextPollMs: number;
 }
 
 /** The live inverter inputs the decision used (or would have used). */
@@ -91,6 +100,8 @@ function deviceDebugs(now: number): DeviceDebug[] {
       usedChargingW: ac !== null && ac < 0 ? -ac : 0,
       usedDischargingW: ac !== null && ac > 0 ? ac : 0,
       pollError: entry?.error ?? null,
+      pollFailures: getPollFailures(d.id),
+      nextPollMs: nextPollDelay(d.id),
     };
   });
 }
