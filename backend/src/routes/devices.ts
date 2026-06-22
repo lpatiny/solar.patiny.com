@@ -8,7 +8,6 @@ import { db } from '../db/Database.ts';
 import type { BatteryReadingRow, DeviceRow } from '../db/rows.ts';
 import { annotateMacConflicts, readArpTable } from '../services/arpTable.ts';
 import {
-  LIVE_REFRESH_MS,
   getLatest,
   readLive,
   reloadDevices,
@@ -20,6 +19,7 @@ import {
   setMarstekUdpManual,
   setMarstekUdpSchedule,
 } from '../services/marstekControl.ts';
+import { getStaleMs } from '../services/marstekPollCadence.ts';
 import {
   MAX_CHARGE_POWER_W,
   MAX_DISCHARGE_POWER_W,
@@ -197,7 +197,8 @@ export default async function deviceRoutes(fastify: FastifyTyped) {
         response: { 200: Type.Array(DiscoveredDevice) },
       },
     },
-    async () => annotateMacConflicts(await discoverMarstekDevices(), readArpTable()),
+    async () =>
+      annotateMacConflicts(await discoverMarstekDevices(), readArpTable()),
   );
 
   fastify.post(
@@ -299,7 +300,7 @@ export default async function deviceRoutes(fastify: FastifyTyped) {
       return {
         device_id: device.id,
         timestamp: entry.timestamp,
-        is_stale: ageMs > LIVE_REFRESH_MS * 2.5,
+        is_stale: ageMs > getStaleMs(),
         error: entry.error,
         values: entry.values,
         control: entry.control,

@@ -27,6 +27,9 @@ export default function BatteryReserveSection({
   const [marstekReserve, setMarstekReserve] = useState(
     config.marstek_reserve_pct,
   );
+  const [pollIntervalSec, setPollIntervalSec] = useState(
+    Math.round(config.marstek_poll_interval_ms / 1000),
+  );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -38,6 +41,7 @@ export default function BatteryReserveSection({
         /* eslint-disable camelcase -- backend /api/config uses snake_case keys */
         byd_reserve_pct: bydReserve,
         marstek_reserve_pct: marstekReserve,
+        marstek_poll_interval_ms: pollIntervalSec * 1000,
         /* eslint-enable camelcase */
       });
       onConfigChange(updated);
@@ -76,12 +80,26 @@ export default function BatteryReserveSection({
           stepSize={1}
         />
       </Row>
+      <Row
+        label="Marstek poll interval"
+        help="How often each Marstek battery is queried over UDP. A slower cadence is gentler on the device (too-frequent queries can crash the ESP32). A device that stops responding is backed off further automatically. Minimum 20s; telemetry counts as stale after 4× this interval."
+      >
+        <UnitNumericInput
+          unit="s"
+          value={pollIntervalSec}
+          onValueChange={(v) => setPollIntervalSec(v)}
+          min={20}
+          max={300}
+          stepSize={10}
+        />
+      </Row>
       <SaveRow
         label="Save reserve settings"
         saving={saving}
         dirty={
           bydReserve !== config.byd_reserve_pct ||
-          marstekReserve !== config.marstek_reserve_pct
+          marstekReserve !== config.marstek_reserve_pct ||
+          pollIntervalSec !== Math.round(config.marstek_poll_interval_ms / 1000)
         }
         error={saveError}
         onSave={() => void handleSave()}

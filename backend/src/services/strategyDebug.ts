@@ -1,13 +1,9 @@
 import { db } from '../db/Database.ts';
 
-import {
-  LIVE_STALE_MS,
-  getLatest,
-  getPollFailures,
-  nextPollDelay,
-} from './batteryPoller.ts';
+import { getLatest, getPollFailures, nextPollDelay } from './batteryPoller.ts';
 import type { LastCommandInfo } from './batteryStrategy.ts';
 import { getLastCommands } from './batteryStrategy.ts';
+import { getStaleMs } from './marstekPollCadence.ts';
 import { getCurrentReading } from './poller.ts';
 import type { StrategyConfig, StrategyMode } from './strategyConfig.ts';
 import { readStrategyConfig } from './strategyConfig.ts';
@@ -74,17 +70,18 @@ export interface StrategyDebug {
 
 /**
  * Build the per-device live telemetry view, gating each value on freshness with
- * the exact same {@link LIVE_STALE_MS} window the control loop applies — so the
+ * the exact same {@link getStaleMs} window the control loop applies — so the
  * `used*` fields are precisely what {@link decide} is fed.
  */
 function deviceDebugs(now: number): DeviceDebug[] {
   const marstek = db
     .listDevices()
     .filter((d) => d.enabled && d.type === 'marstek');
+  const staleMs = getStaleMs();
   return marstek.map((d) => {
     const entry = getLatest(d.id);
     const ageMs = entry && entry.valuesAt > 0 ? now - entry.valuesAt : null;
-    const fresh = ageMs !== null && ageMs <= LIVE_STALE_MS;
+    const fresh = ageMs !== null && ageMs <= staleMs;
     const ac = fresh ? (entry?.values?.ac_power_w ?? null) : null;
     return {
       id: d.id,

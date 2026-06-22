@@ -80,6 +80,7 @@ export interface ConfigData {
   solarweb_configured: boolean;
   solarweb_scrape_delay_ms: number;
   poll_interval_ms: number;
+  marstek_poll_interval_ms: number;
   panel_surface_m2: number;
   panel_efficiency_pct: number;
   panel_performance_ratio: number;

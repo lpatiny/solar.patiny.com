@@ -1,9 +1,10 @@
 import { db } from '../db/Database.ts';
 import { withTimeout } from '../utils/withTimeout.ts';
 
-import { LIVE_STALE_MS, getLatest } from './batteryPoller.ts';
+import { getLatest } from './batteryPoller.ts';
 import type { ManualAction } from './marstekControl.ts';
 import { setMarstekUdpManual } from './marstekControl.ts';
+import { getStaleMs } from './marstekPollCadence.ts';
 import type { MarstekValues } from './marstekRegisters.ts';
 import { getCurrentReading } from './poller.ts';
 import type { StrategyMode } from './strategyConfig.ts';
@@ -80,7 +81,7 @@ let log: Logger = {
 function freshValues(deviceId: number): MarstekValues | null {
   const entry = getLatest(deviceId);
   if (!entry || entry.valuesAt === 0) return null;
-  if (Date.now() - entry.valuesAt > LIVE_STALE_MS) return null;
+  if (Date.now() - entry.valuesAt > getStaleMs()) return null;
   return entry.values;
 }
 

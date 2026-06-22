@@ -3,6 +3,10 @@ import { db } from '../db/Database.ts';
 import type { DeviceRow } from '../db/rows.ts';
 
 import { healDeviceHosts } from './marstekHostHeal.ts';
+import {
+  getPollIntervalMs,
+  pollDelayForFailures,
+} from './marstekPollCadence.ts';
 import type { ControlParam, MarstekValues } from './marstekRegisters.ts';
 import { readMarstekUdp } from './marstekUdpClient.ts';
 
@@ -26,36 +30,6 @@ export interface LiveEntry {
   valuesAt: number;
 }
 
-/**
- * How often the live in-memory snapshot is refreshed, independent of how often a
- * row is persisted to history. The Marstek Open API floor is ≤1 query/10s per
- * device, and that whole budget is shared with the strategy loop's command
- * writes (both go through the same per-device UDP queue). Polling at exactly the
- * 10s floor consumed 100% of it, so every command write queued behind a growing
- * read backlog and was delivered minutes late — the battery then held a stale
- * discharge setpoint. Refreshing at 20s leaves a free admission slot every 20s
- * for command writes while keeping reads well under the hardware floor; SOC
- * changes slowly enough that a 20s display cadence is imperceptible.
- */
-export const LIVE_REFRESH_MS = 20_000;
-
-/**
- * A live snapshot older than this (ms) is treated as stale: the control strategy
- * must not act on it (it would drive a battery blind, e.g. discharging past its
- * floor). Four missed polls — long enough to ride out a transient, short enough
- * that an arbitrarily old SOC never keeps a device eligible.
- */
-export const LIVE_STALE_MS = 4 * LIVE_REFRESH_MS;
-
-/**
- * Cap on the per-device poll backoff (ms). A device that keeps failing is polled
- * no faster than this — so an unresponsive/crashed Marstek (or a struggling
- * ESP32 that our polling rate itself knocks over) is left alone instead of being
- * hammered every {@link LIVE_REFRESH_MS} with reads plus failure-triggered
- * discovery. The first successful poll resets the cadence back to LIVE_REFRESH_MS.
- */
-export const MAX_POLL_BACKOFF_MS = 5 * 60_000;
-
 const latest = new Map<number, LiveEntry>();
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
 // Consecutive failed polls per device, used to back off the poll cadence. Reset
@@ -63,7 +37,7 @@ const timers = new Map<number, ReturnType<typeof setTimeout>>();
 const consecutiveFailures = new Map<number, number>();
 // Wall-clock (ms) of the last poll that was written to the history table, per
 // device. Used to throttle DB writes to `poll_interval_ms` while the live cache
-// keeps refreshing every LIVE_REFRESH_MS.
+// keeps refreshing on the configured poll interval.
 const lastPersistedAt = new Map<number, number>();
 
 let log: Logger = {
@@ -130,25 +104,17 @@ async function pollDevice(
 }
 
 /**
- * Delay before a device's next poll: {@link LIVE_REFRESH_MS} when healthy, then
- * doubling per consecutive failure (40s, 80s, …) capped at
- * {@link MAX_POLL_BACKOFF_MS}. Exported for the debug view.
+ * Delay before a device's next poll: the configured interval when healthy, then
+ * doubling per consecutive failure, capped at {@link MAX_POLL_BACKOFF_MS}.
+ * Exported for the debug view.
  * @param deviceId - device id
  * @returns the delay in ms until the next poll
  */
 export function nextPollDelay(deviceId: number): number {
-  return pollDelayForFailures(consecutiveFailures.get(deviceId) ?? 0);
-}
-
-/**
- * The poll delay (ms) for a given consecutive-failure count: base cadence when
- * healthy, doubling per failure, capped. Pure, so it is unit-tested directly.
- * @param failures - consecutive failed polls (0 = healthy)
- * @returns the delay in ms until the next poll
- */
-export function pollDelayForFailures(failures: number): number {
-  if (failures <= 0) return LIVE_REFRESH_MS;
-  return Math.min(LIVE_REFRESH_MS * 2 ** failures, MAX_POLL_BACKOFF_MS);
+  return pollDelayForFailures(
+    consecutiveFailures.get(deviceId) ?? 0,
+    getPollIntervalMs(),
+  );
 }
 
 /**

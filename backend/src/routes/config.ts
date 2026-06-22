@@ -3,6 +3,11 @@ import { Type } from 'typebox';
 
 import { requireAuth } from '../auth.ts';
 import { db } from '../db/Database.ts';
+import {
+  MAX_POLL_BACKOFF_MS,
+  MIN_POLL_INTERVAL_MS,
+  getPollIntervalMs,
+} from '../services/marstekPollCadence.ts';
 import { isConfigured as isSolarWebConfigured } from '../services/solarweb.ts';
 import type { FastifyTyped } from '../types.ts';
 
@@ -14,6 +19,7 @@ const ConfigResponse = Type.Object({
   solarweb_configured: Type.Boolean(),
   solarweb_scrape_delay_ms: Type.Number(),
   poll_interval_ms: Type.Number(),
+  marstek_poll_interval_ms: Type.Number(),
   panel_surface_m2: Type.Number(),
   panel_efficiency_pct: Type.Number(),
   panel_performance_ratio: Type.Number(),
@@ -24,6 +30,12 @@ const ConfigResponse = Type.Object({
 
 const PanelSettingsBody = Type.Object({
   solarweb_scrape_delay_ms: Type.Optional(Type.Number({ minimum: 1000 })),
+  marstek_poll_interval_ms: Type.Optional(
+    Type.Number({
+      minimum: MIN_POLL_INTERVAL_MS,
+      maximum: MAX_POLL_BACKOFF_MS,
+    }),
+  ),
   panel_surface_m2: Type.Optional(Type.Number({ minimum: 1 })),
   panel_efficiency_pct: Type.Optional(
     Type.Number({ minimum: 1, maximum: 100 }),
@@ -72,6 +84,7 @@ function buildConfigResponse() {
     solarweb_configured: isSolarWebConfigured(),
     solarweb_scrape_delay_ms: setting('solarweb_scrape_delay_ms'),
     poll_interval_ms: Number(process.env.POLL_INTERVAL_MS ?? 10_000),
+    marstek_poll_interval_ms: getPollIntervalMs(),
     panel_surface_m2: setting('panel_surface_m2'),
     panel_efficiency_pct: setting('panel_efficiency_pct'),
     panel_performance_ratio: setting('panel_performance_ratio'),
