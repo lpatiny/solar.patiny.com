@@ -5,6 +5,7 @@ import type { DeviceRow } from '../db/rows.ts';
 import { healDeviceHosts } from './marstekHostHeal.ts';
 import {
   getPollIntervalMs,
+  getStaleMs,
   pollDelayForFailures,
 } from './marstekPollCadence.ts';
 import type { ControlParam, MarstekValues } from './marstekRegisters.ts';
@@ -183,11 +184,49 @@ export function stopBatteryPolling(): void {
 }
 
 /**
- * Latest cached snapshot for a device, or null if never polled.
+ * Latest cached snapshot for a device, or null if never polled. May carry
+ * forward stale values from a failed poll — callers that must act on or display
+ * LIVE state should use {@link getFreshLatest} / {@link isDeviceFresh} instead.
  * @param deviceId - device id
  */
 export function getLatest(deviceId: number): LiveEntry | null {
   return latest.get(deviceId) ?? null;
+}
+
+/**
+ * Age (ms) of a device's last SUCCESSFUL read, or null if it was never read.
+ * Based on `valuesAt` (advanced only on success), NOT `timestamp` (advanced on
+ * every attempt) — so a device that keeps failing correctly ages out.
+ * @param deviceId - device id
+ * @returns ms since the last successful read, or null if never read
+ */
+export function liveAgeMs(deviceId: number): number | null {
+  const entry = latest.get(deviceId);
+  if (!entry || entry.valuesAt === 0) return null;
+  return Date.now() - entry.valuesAt;
+}
+
+/**
+ * Whether a device's telemetry is fresh enough to act on or display as live: it
+ * was read successfully within {@link getStaleMs}. The single source of truth for
+ * "is this device online", so every consumer agrees with the control loop.
+ * @param deviceId - device id
+ * @returns true when the last successful read is within the staleness window
+ */
+export function isDeviceFresh(deviceId: number): boolean {
+  const age = liveAgeMs(deviceId);
+  return age !== null && age <= getStaleMs();
+}
+
+/**
+ * The device's latest snapshot, but only when its telemetry is fresh
+ * ({@link isDeviceFresh}). Returns null for stale or never-read devices, so a
+ * caller can never use carried-over stale values as if they were live.
+ * @param deviceId - device id
+ * @returns the fresh snapshot, or null when stale/never-read
+ */
+export function getFreshLatest(deviceId: number): LiveEntry | null {
+  return isDeviceFresh(deviceId) ? (latest.get(deviceId) ?? null) : null;
 }
 
 /**
@@ -198,4 +237,14 @@ export async function readLive(deviceId: number): Promise<LiveEntry | null> {
   const device = db.getDevice(deviceId);
   if (!device) return null;
   return pollDevice(device, true);
+}
+
+/**
+ * Test-only: seed the in-memory snapshot for a device so freshness helpers can be
+ * exercised without a live UDP poll.
+ * @param deviceId - device id
+ * @param entry - the snapshot to store
+ */
+export function _setLatest(deviceId: number, entry: LiveEntry): void {
+  latest.set(deviceId, entry);
 }

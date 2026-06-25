@@ -130,7 +130,9 @@ export function sumStoredKwh(
       ? (homeSoc / 100) * homeCapacityKwh
       : 0;
   for (const device of devices) {
-    const values = liveById[device.id]?.values;
+    const live = liveById[device.id];
+    if (live?.is_stale) continue;
+    const values = live?.values;
     if (values?.soc_pct == null || values.energy_kwh == null) continue;
     total += (values.soc_pct / 100) * values.energy_kwh;
   }
@@ -140,7 +142,8 @@ export function sumStoredKwh(
 /**
  * Sum the instantaneous AC power across every Marstek device, in watts, using the
  * same sign convention as the home battery (positive = discharging, negative =
- * charging). Devices without a live power reading are skipped.
+ * charging). Devices without a live power reading — and stale (offline) devices,
+ * whose last-known power would otherwise inflate the figure — are skipped.
  * @param devices - The configured Marstek devices.
  * @param liveById - Latest live snapshot per device id.
  * @returns Net Marstek power in watts (positive discharging, negative charging).
@@ -151,7 +154,9 @@ export function sumMarstekPowerW(
 ): number {
   let total = 0;
   for (const device of devices) {
-    const acPowerW = liveById[device.id]?.values?.ac_power_w;
+    const live = liveById[device.id];
+    if (live?.is_stale) continue;
+    const acPowerW = live?.values?.ac_power_w;
     if (acPowerW == null) continue;
     total += acPowerW;
   }

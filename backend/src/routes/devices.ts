@@ -9,6 +9,7 @@ import type { BatteryReadingRow, DeviceRow } from '../db/rows.ts';
 import { annotateMacConflicts, readArpTable } from '../services/arpTable.ts';
 import {
   getLatest,
+  isDeviceFresh,
   readLive,
   reloadDevices,
 } from '../services/batteryPoller.ts';
@@ -19,7 +20,6 @@ import {
   setMarstekUdpManual,
   setMarstekUdpSchedule,
 } from '../services/marstekControl.ts';
-import { getStaleMs } from '../services/marstekPollCadence.ts';
 import {
   MAX_CHARGE_POWER_W,
   MAX_DISCHARGE_POWER_W,
@@ -259,6 +259,9 @@ export default async function deviceRoutes(fastify: FastifyTyped) {
       return {
         ok: entry.error === null,
         error: entry.error,
+        // After a failed poll readLive carries forward the last snapshot, so flag
+        // whether those values are still fresh rather than serving them as live.
+        is_stale: !isDeviceFresh(request.params.id),
         values: entry.values,
       };
     },
@@ -296,11 +299,14 @@ export default async function deviceRoutes(fastify: FastifyTyped) {
           control: [],
         };
       }
-      const ageMs = Date.now() - entry.timestamp * 1000;
       return {
         device_id: device.id,
         timestamp: entry.timestamp,
-        is_stale: ageMs > getStaleMs(),
+        // Staleness is measured from the last SUCCESSFUL read (isDeviceFresh →
+        // valuesAt), not the last poll ATTEMPT (entry.timestamp): a device that
+        // keeps failing must read as stale, not stay "fresh" because we keep
+        // retrying it. This is the same gate the control loop uses.
+        is_stale: !isDeviceFresh(device.id),
         error: entry.error,
         values: entry.values,
         control: entry.control,

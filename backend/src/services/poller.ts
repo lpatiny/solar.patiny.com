@@ -2,7 +2,7 @@
 import { db } from '../db/Database.ts';
 import type { RealtimeReading } from '../types.ts';
 
-import { getLatest } from './batteryPoller.ts';
+import { getFreshLatest } from './batteryPoller.ts';
 import { fetchPowerFlow } from './fronius.ts';
 import { fetchStationReadings } from './meteoStationService.ts';
 import { closeModbusConnections, readModbusData } from './modbusReader.ts';
@@ -50,8 +50,10 @@ export function getCurrentReading(): RealtimeReading | null {
 
 /**
  * Sum the live Marstek AC power across enabled Marstek devices (discharge
- * positive, charge negative). Returns null when no Marstek device has reported,
- * so a Marstek-less or not-yet-polled system leaves consumption untouched.
+ * positive, charge negative). Only FRESH telemetry is included — a device whose
+ * last successful read has aged out is skipped, so an offline Marstek's stale
+ * last-known power can never corrupt consumption_w. Returns null when no Marstek
+ * device has a fresh reading, leaving consumption untouched.
  */
 function sumMarstekNetW(): number | null {
   const devices = db
@@ -59,7 +61,7 @@ function sumMarstekNetW(): number | null {
     .filter((device) => device.enabled && device.type === 'marstek');
   let sum: number | null = null;
   for (const device of devices) {
-    const ac = getLatest(device.id)?.values?.ac_power_w ?? null;
+    const ac = getFreshLatest(device.id)?.values?.ac_power_w ?? null;
     if (ac !== null) sum = (sum ?? 0) + ac;
   }
   return sum;

@@ -1,6 +1,6 @@
 import { db } from '../db/Database.ts';
 
-import { getLatest } from './batteryPoller.ts';
+import { getFreshLatest } from './batteryPoller.ts';
 import { getForecast } from './forecastService.ts';
 import { getCurrentReading } from './poller.ts';
 import { readStrategyConfig } from './strategyConfig.ts';
@@ -222,10 +222,14 @@ export async function getBatteryForecast(): Promise<BatteryForecastSeries[]> {
       typicalConsumptionKwh: slot.typicalConsumptionKwh,
     }));
 
+  // Seed each battery's starting SOC from FRESH telemetry only. A stale (offline)
+  // device's last-known SOC is dropped to null, so the forecast treats it as
+  // unknown — exactly as the control loop does — instead of projecting from a
+  // potentially hours-old value.
   const batteries: BatteryForecastDevice[] = devices.map((device) => ({
     id: device.id,
     name: device.name,
-    socPct: getLatest(device.id)?.values?.soc_pct ?? null,
+    socPct: getFreshLatest(device.id)?.values?.soc_pct ?? null,
   }));
 
   return simulateBatteryForecast(futureSlots, batteries, {

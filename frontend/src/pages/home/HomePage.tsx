@@ -365,13 +365,17 @@ export default function HomePage() {
     });
   }
   for (const device of devices) {
-    const values = liveById[device.id]?.values;
+    const live = liveById[device.id];
+    const values = live?.values;
     if (!values) continue;
+    // A stale device's values are last-known, not live: render it as offline so
+    // the diagram never shows a phantom charge/discharge for an unreachable unit.
     flowBatteries.push({
       id: `device-${device.id}`,
       name: device.name,
       watts: values.ac_power_w ?? 0,
       soc: values.soc_pct,
+      offline: live.is_stale,
     });
   }
 

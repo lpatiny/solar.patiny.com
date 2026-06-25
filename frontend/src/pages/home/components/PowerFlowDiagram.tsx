@@ -30,6 +30,13 @@ export interface FlowBattery {
   watts: number;
   /** State of charge in percent, or null when unknown. */
   soc: number | null;
+  /**
+   * True when the device's telemetry is stale (offline): its `watts`/`soc` are
+   * last-known, not live, so the node renders "offline" with no flow rather than
+   * a phantom charge/discharge.
+   * @default false
+   */
+  offline?: boolean;
 }
 
 interface PowerFlowDiagramProps {
@@ -54,11 +61,15 @@ interface Edge {
   color: string;
 }
 
-function batteryStateLabel(watts: number): string {
+function batteryStateLabel(watts: number, offline = false): string {
+  if (offline) return 'offline';
   if (watts > FLOW_THRESHOLD_W) return 'discharging';
   if (watts < -FLOW_THRESHOLD_W) return 'charging';
   return 'idle';
 }
+
+/** Muted colour for an offline battery node (vs the live battery colour). */
+const OFFLINE_COLOR = 'var(--text-secondary)';
 
 interface FlowNodeViewProps {
   pos: Point;
@@ -174,7 +185,8 @@ export default function PowerFlowDiagram({
     edges.push({
       key: battery.id,
       node: pos,
-      watts: battery.watts,
+      // An offline battery has no live flow — force 0 so no animated line shows.
+      watts: battery.offline ? 0 : battery.watts,
       out: battery.watts < 0,
       color: 'var(--battery)',
     });
@@ -258,28 +270,35 @@ export default function PowerFlowDiagram({
         />
 
         {batteryNodes.map(({ battery, pos }) => {
+          const color = battery.offline ? OFFLINE_COLOR : 'var(--battery)';
           return (
             <FlowNodeView
               key={battery.id}
               pos={pos}
-              color="var(--battery)"
+              color={color}
               name={battery.name}
               value={
-                battery.soc == null
-                  ? formatW(battery.watts)
-                  : `${Math.round(battery.soc)}%`
+                battery.offline
+                  ? 'offline'
+                  : battery.soc == null
+                    ? formatW(battery.watts)
+                    : `${Math.round(battery.soc)}%`
               }
-              sub={`${batteryStateLabel(battery.watts)}${
-                Math.abs(battery.watts) >= FLOW_THRESHOLD_W
-                  ? ` · ${formatW(battery.watts)}`
-                  : ''
-              }`}
+              sub={
+                battery.offline
+                  ? 'no recent data'
+                  : `${batteryStateLabel(battery.watts)}${
+                      Math.abs(battery.watts) >= FLOW_THRESHOLD_W
+                        ? ` · ${formatW(battery.watts)}`
+                        : ''
+                    }`
+              }
               icon={
                 <BatteryIcon
                   x={pos.x}
                   y={pos.y}
-                  color="var(--battery)"
-                  soc={battery.soc}
+                  color={color}
+                  soc={battery.offline ? null : battery.soc}
                 />
               }
             />
