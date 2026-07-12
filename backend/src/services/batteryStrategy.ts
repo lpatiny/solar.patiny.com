@@ -59,6 +59,7 @@ interface CommandState {
 const lastCommand = new Map<number, CommandState>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 let lastMode: StrategyMode = 'off';
+let lastPhase: Phase = 'idle';
 let status: StrategyStatus = {
   enabled: false,
   phase: 'off',
@@ -175,6 +176,7 @@ async function runCycle(): Promise<void> {
       );
       log.info(`[strategy] ${config.mode} — released battery control`);
     }
+    lastPhase = 'idle';
     status = { ...status, enabled: false, phase: 'off', error: null };
     return;
   }
@@ -206,13 +208,21 @@ async function runCycle(): Promise<void> {
     dischargingW: dischargingNow(d.id),
   }));
   const importW = Math.max(reading.grid_w, 0);
-  const { phase, decisions } = decide(
+  const { phase, decisions, diagnostics } = decide(
     config,
     withState,
     reading.grid_injection_w,
     importW,
     reading.battery_w,
+    lastPhase,
   );
+
+  if (diagnostics.directionHoldoff) {
+    log.info(
+      `[strategy] direction reversal from '${lastPhase}' — stopping the fleet for one cycle first`,
+    );
+  }
+  lastPhase = phase;
 
   if (phase === 'charge' || phase === 'discharge') {
     const marstekDischarge = withState.reduce((s, d) => s + d.dischargingW, 0);
@@ -253,6 +263,11 @@ async function runCycle(): Promise<void> {
   if (unknownSoc.length > 0) {
     notes.push(
       `stale/unknown telemetry: ${unknownSoc.map((d) => d.name).join(', ')}`,
+    );
+  }
+  if (diagnostics.directionHoldoff) {
+    notes.push(
+      'direction reversal held — fleet stopped for one cycle before reversing',
     );
   }
 
@@ -304,6 +319,16 @@ export function stopBatteryStrategy(): void {
  */
 export function getStrategyStatus(): StrategyStatus {
   return status;
+}
+
+/**
+ * The phase the loop executed last cycle, as fed back into {@link decide} for the
+ * charge↔discharge direction holdoff. Exposed so the debug endpoint recomputes
+ * the decision with the exact same input.
+ * @returns the last executed phase
+ */
+export function getLastPhase(): Phase {
+  return lastPhase;
 }
 
 /** The last command confirmed-sent to a device, as tracked by the loop. */

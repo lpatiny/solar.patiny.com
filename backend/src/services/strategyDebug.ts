@@ -2,7 +2,7 @@ import { db } from '../db/Database.ts';
 
 import { getLatest, getPollFailures, nextPollDelay } from './batteryPoller.ts';
 import type { LastCommandInfo } from './batteryStrategy.ts';
-import { getLastCommands } from './batteryStrategy.ts';
+import { getLastCommands, getLastPhase } from './batteryStrategy.ts';
 import { getStaleMs } from './marstekPollCadence.ts';
 import { getCurrentReading } from './poller.ts';
 import type { StrategyConfig, StrategyMode } from './strategyConfig.ts';
@@ -182,7 +182,14 @@ export function getStrategyDebug(): StrategyDebug {
     reading.grid_injection_w,
     importW,
     reading.battery_w,
+    getLastPhase(),
   );
+
+  if (diagnostics.directionHoldoff) {
+    notes.push(
+      `direction reversal from '${getLastPhase()}' is held — the fleet is stopped for one cycle before reversing, so it can never split across charge and discharge.`,
+    );
+  }
 
   if (phase !== 'charge' && diagnostics.surplusW <= config.injectTargetW) {
     notes.push(

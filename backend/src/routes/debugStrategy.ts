@@ -50,6 +50,7 @@ const DiagnosticsSchema = Type.Object({
   discharge_cap_w: Type.Number(),
   desired_discharge_w: Type.Number(),
   per_discharge_w: Type.Number(),
+  direction_holdoff: Type.Boolean(),
 });
 
 const DecisionSchema = Type.Object({
@@ -187,6 +188,7 @@ export default async function debugStrategyRoutes(fastify: FastifyTyped) {
               discharge_cap_w: diagnostics.dischargeCapW,
               desired_discharge_w: diagnostics.desiredDischargeW,
               per_discharge_w: diagnostics.perDischargeW,
+              direction_holdoff: diagnostics.directionHoldoff,
             }
           : null,
         last_commands: lastCommands.map((command) => ({

@@ -28,7 +28,7 @@ function devices(...states: Array<Partial<DeviceState>>): DeviceState[] {
   }));
 }
 
-// decide(config, devices, injectionW, importW, bydW)
+// decide(config, devices, injectionW, importW, bydW, previousPhase)
 
 // --- Charge (solar surplus), priority in both discharge modes ---
 
@@ -68,12 +68,13 @@ test('surplus is reconstructed from injection plus current charging', () => {
   expect(decisions.map((d) => d.powerW)).toStrictEqual([250, 250]);
 });
 
-test('charging while importing is not mistaken for surplus; the loop discharges', () => {
+test('charging while importing is not mistaken for surplus; the loop stops it', () => {
   // Night latch regression: no export, grid imports 1000 W while both batteries
-  // are (wrongly) charging 500 W each. The grid-sourced charge must NOT count as
-  // surplus — the loop must fall through to discharge and cover the 1000 W deficit
-  // (capped at 400 W each), instead of self-perpetuating the grid charging.
-  const { phase, decisions } = decide(
+  // are (wrongly) charging 500 W each — the entire import IS the charging. The
+  // grid-sourced charge must NOT count as surplus (no self-perpetuating latch),
+  // and the batteries' own draw must not read as house deficit either: the right
+  // move is to STOP the charging, not to discharge into it.
+  const { phase, decisions, diagnostics } = decide(
     config,
     devices({ soc: 80, chargingW: 500 }, { soc: 80, chargingW: 500 }),
     0,
@@ -81,8 +82,26 @@ test('charging while importing is not mistaken for surplus; the loop discharges'
     0,
   );
 
+  expect(phase).toBe('idle');
+  expect(diagnostics.surplusW).toBe(0);
+  expect(diagnostics.dischargeTargetW).toBe(0);
+  expect(decisions.map((d) => d.action)).toStrictEqual(['stop', 'stop']);
+});
+
+test('while wrongly grid-charging, only the true house share is discharged', () => {
+  // Import 1200 = 1000 W of (wrong) battery charging + 200 W of real house load.
+  // Subtracting the fleet's own charging leaves exactly the 200 W house deficit,
+  // covered at 100 W each — never the batteries' own draw.
+  const { phase, decisions } = decide(
+    config,
+    devices({ soc: 80, chargingW: 500 }, { soc: 80, chargingW: 500 }),
+    0,
+    1200,
+    0,
+  );
+
   expect(phase).toBe('discharge');
-  expect(decisions.map((d) => d.powerW)).toStrictEqual([400, 400]);
+  expect(decisions.map((d) => d.powerW)).toStrictEqual([100, 100]);
 });
 
 test('partial import nets out of the charge surplus', () => {
@@ -350,8 +369,91 @@ test('charging wins while one battery is discharging and another charging', () =
   );
 
   expect(phase).toBe('charge');
-  // surplus = injection 4510 + charging 697 - import 0 = 5207.
-  expect(diagnostics.surplusW).toBe(5207);
+  // surplus = injection 4510 + charging 697 - discharging 301 - import 0 = 4906.
+  expect(diagnostics.surplusW).toBe(4906);
   expect(decisions.map((d) => d.action)).toStrictEqual(['charge', 'charge']);
   expect(decisions.map((d) => d.powerW)).toStrictEqual([500, 500]);
+});
+
+// --- Fleet symmetry: one battery's flow is never absorbed by the other ---
+
+test('a discharging battery does not inflate the charge surplus', () => {
+  // One battery (wrongly) discharges 400 W, all of it exported: injection 900.
+  // The true solar surplus is 900 - 400 = 500 = the inject target, so there is
+  // nothing to store — the other battery must NOT charge from its sibling.
+  const { phase, diagnostics, decisions } = decide(
+    config,
+    devices({ soc: 80, dischargingW: 400 }, { soc: 80 }),
+    900,
+    0,
+    0,
+  );
+
+  expect(diagnostics.surplusW).toBe(500);
+  expect(phase).toBe('idle');
+  expect(decisions.map((d) => d.action)).toStrictEqual(['stop', 'stop']);
+});
+
+test('cover: never covers another Marstek stuck charging', () => {
+  // The 2026-07-12 incident: one battery stuck on a stale 697 W charge command
+  // pulls the grid into import. That import is NOT house deficit — the other
+  // battery must stay idle instead of discharging into its sibling.
+  const { phase, decisions, diagnostics } = decide(
+    config,
+    devices({ soc: 80, chargingW: 697 }, { soc: 80 }),
+    0,
+    700,
+    0,
+  );
+
+  expect(diagnostics.dischargeTargetW).toBe(3);
+  expect(phase).toBe('idle');
+  expect(decisions.map((d) => d.action)).toStrictEqual(['stop', 'stop']);
+});
+
+// --- Direction holdoff: a charge↔discharge reversal passes through stop-all ---
+
+test('charge→discharge reversal is held for one stop-all cycle', () => {
+  const inputs = [devices({ soc: 80 }, { soc: 80 }), 0, 600, 0] as const;
+
+  const held = decide(config, ...inputs, 'charge');
+  expect(held.phase).toBe('idle');
+  expect(held.diagnostics.directionHoldoff).toBe(true);
+  expect(held.decisions.map((d) => d.action)).toStrictEqual(['stop', 'stop']);
+
+  // Next cycle the loop fed back 'idle', so the reversal proceeds fleet-wide.
+  const next = decide(config, ...inputs, 'idle');
+  expect(next.phase).toBe('discharge');
+  expect(next.diagnostics.directionHoldoff).toBe(false);
+  expect(next.decisions.map((d) => d.powerW)).toStrictEqual([300, 300]);
+});
+
+test('discharge→charge reversal is held for one stop-all cycle', () => {
+  const inputs = [devices({}, {}), 2600, 0, 0] as const;
+
+  const held = decide(config, ...inputs, 'discharge');
+  expect(held.phase).toBe('idle');
+  expect(held.diagnostics.directionHoldoff).toBe(true);
+  expect(held.decisions.map((d) => d.action)).toStrictEqual(['stop', 'stop']);
+
+  const next = decide(config, ...inputs, 'idle');
+  expect(next.phase).toBe('charge');
+  expect(next.decisions.map((d) => d.powerW)).toStrictEqual([500, 500]);
+});
+
+test('staying in the same direction is never held', () => {
+  const charging = decide(config, devices({}, {}), 2600, 0, 0, 'charge');
+  expect(charging.phase).toBe('charge');
+  expect(charging.diagnostics.directionHoldoff).toBe(false);
+
+  const covering = decide(
+    config,
+    devices({ soc: 80 }, { soc: 80 }),
+    0,
+    600,
+    0,
+    'discharge',
+  );
+  expect(covering.phase).toBe('discharge');
+  expect(covering.diagnostics.directionHoldoff).toBe(false);
 });
