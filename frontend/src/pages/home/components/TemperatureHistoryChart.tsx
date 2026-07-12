@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 
-import type { SensorMeta, SensorReadingPoint } from './SensorMetricChart.tsx';
-import SensorMetricChart, {
-  SENSOR_METRICS,
-  hasMetric,
-} from './SensorMetricChart.tsx';
+import SensorMetricChart from './SensorMetricChart.tsx';
 import { deriveResolution } from './historyChartUtils.ts';
+import type { SensorMeta, SensorReadingPoint } from './sensorMetrics.ts';
+import { SENSOR_METRICS, hasMetric } from './sensorMetrics.ts';
 
 interface HistoryResponse {
   sensors: SensorMeta[];
