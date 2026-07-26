@@ -111,6 +111,41 @@ Requires an existing Traefik instance on an external Docker network named `traef
 docker compose up -d
 ```
 
+### Apache reverse proxy (http and https, no redirect)
+
+Run the app host-networked (`compose.yaml`, binding `PORT` on localhost) and let Apache proxy to it. The `SolarPatiny` macro holds the proxy configuration once and both vhosts use it, so plain http is served instead of being redirected to https.
+
+Requires `mod_macro`, `mod_proxy`, `mod_proxy_http` and `mod_headers` (`a2enmod macro proxy proxy_http headers`).
+
+```apache
+<Macro SolarPatiny>
+    ServerName      solar.patiny.com
+
+    # The global 0.certbot.conf aliases /.well-known/acme-challenge/ to
+    # /var/www/html/, but ProxyPass runs before Alias — so the exclusion below
+    # is what actually keeps ACME challenges from being sent to the backend.
+    ProxyPass        /.well-known !
+
+    ProxyPass               /       http://localhost:60504/
+    ProxyPassReverse        /       http://localhost:60504/
+</Macro>
+
+<VirtualHost *:80>
+    Use SolarPatiny
+</VirtualHost>
+
+<VirtualHost *:443>
+    Use SSLConf solar.patiny.com
+    Use SolarPatiny
+
+    # Apache does not forward the scheme on its own; the backend needs it so the
+    # session cookie's `secure: 'auto'` marks the cookie Secure over https.
+    RequestHeader set X-Forwarded-Proto "https"
+</VirtualHost>
+
+UndefMacro SolarPatiny
+```
+
 ## Local development
 
 ```sh
