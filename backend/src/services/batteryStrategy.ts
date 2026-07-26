@@ -236,6 +236,7 @@ async function runCycle(): Promise<void> {
     importW,
     reading.battery_w,
     lastPhase,
+    reading.production_w,
   );
 
   if (diagnostics.directionHoldoff) {

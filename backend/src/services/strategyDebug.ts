@@ -201,6 +201,7 @@ export function getStrategyDebug(): StrategyDebug {
     importW,
     reading.battery_w,
     getLastPhase(),
+    reading.production_w,
   );
 
   if (diagnostics.directionHoldoff) {
@@ -209,6 +210,16 @@ export function getStrategyDebug(): StrategyDebug {
     );
   }
 
+  if (diagnostics.chargeBlockedByByd) {
+    notes.push(
+      `the BYD is discharging ${Math.round(diagnostics.bydDischargeW)}W, so the house is in deficit and charging is blocked: any Marstek charge would come out of the BYD, not out of the sun.`,
+    );
+  }
+  if (diagnostics.rawSurplusW > diagnostics.productionCapW) {
+    notes.push(
+      `the meter balance claimed ${Math.round(diagnostics.rawSurplusW)}W of surplus but the PV only produced ${Math.round(diagnostics.productionCapW)}W, so the surplus was clamped to production (incoherent Fronius snapshot).`,
+    );
+  }
   if (phase !== 'charge' && diagnostics.surplusW <= config.injectTargetW) {
     notes.push(
       `no exportable surplus above the inject target: surplus=${Math.round(diagnostics.surplusW)}W ≤ injectTarget=${config.injectTargetW}W, so charging does not trigger.`,

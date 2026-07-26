@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import type { StrategyConfig } from '../strategyConfig.ts';
 import type { DeviceState } from '../strategyDecide.ts';
-import { decide } from '../strategyDecide.ts';
+import { MIN_CHARGE_W, decide } from '../strategyDecide.ts';
 
 const config: StrategyConfig = {
   mode: 'auto',
@@ -456,4 +456,265 @@ test('staying in the same direction is never held', () => {
   );
   expect(covering.phase).toBe('discharge');
   expect(covering.diagnostics.directionHoldoff).toBe(false);
+});
+
+// --- BYD coupling: the fleet sits behind the Fronius meter, so a "surplus" made
+// of the fleet's own charging can be the BYD paying for it (2026-07-26) ---
+
+/** The fleet as it stood during the 2026-07-26 incident: SOC 20 and 21. */
+function incidentFleet(
+  first: Partial<DeviceState>,
+  second: Partial<DeviceState>,
+): DeviceState[] {
+  return [
+    {
+      id: 1,
+      name: 'Marstek 1',
+      soc: 20,
+      chargingW: 0,
+      dischargingW: 0,
+      ...first,
+    },
+    {
+      id: 2,
+      name: 'Marstek 2',
+      soc: 21,
+      chargingW: 0,
+      dischargingW: 0,
+      ...second,
+    },
+  ];
+}
+
+test('09:20:19 incident: the fleet never charges out of a discharging BYD', () => {
+  // readings 2026-07-26 09:20:19: production 399.6 W, grid +81.1 W (importing),
+  // battery_w +1246.1 W (BYD discharging), marstek_net_w -966; battery_readings
+  // 09:20:14 has both units at ac_power_w -483. Before the fix, surplus read
+  // 0 + 966 - 81.1 = +884.9 W — the fleet's OWN draw, laundered into "solar" —
+  // and the loop re-commanded 192 W per unit while the BYD delivered 1246 W.
+  const { phase, decisions, diagnostics } = decide(
+    config,
+    incidentFleet({ chargingW: 483 }, { chargingW: 483 }),
+    0,
+    81.1,
+    1246.1,
+    'charge',
+    399.6,
+  );
+
+  expect(diagnostics.surplusW).toBeCloseTo(-361.2, 6);
+  expect(diagnostics.chargeBlockedByByd).toBe(true);
+  expect(diagnostics.perChargeW).toBe(0);
+  expect(phase).toBe('idle');
+  expect(decisions.map((d) => d.action)).toStrictEqual(['stop', 'stop']);
+  expect(decisions.map((d) => d.powerW)).toStrictEqual([0, 0]);
+});
+
+test('09:20:19 incident: the deficit the BYD carried is taken over, not stored', () => {
+  // Same sample one cycle later, after the holdoff passed through stop-all. The
+  // right move is to DISCHARGE the 361 W the house is short — and only Marstek 2
+  // may, because Marstek 1 sits exactly on the 20 % floor.
+  const { phase, decisions } = decide(
+    config,
+    incidentFleet({ chargingW: 483 }, { chargingW: 483 }),
+    0,
+    81.1,
+    1246.1,
+    'idle',
+    399.6,
+  );
+
+  expect(phase).toBe('discharge');
+  expect(decisions.map((d) => d.action)).toStrictEqual(['stop', 'discharge']);
+  expect(decisions.map((d) => d.powerW)).toStrictEqual([0, 361]);
+});
+
+test('08:27:01 incident: a discharging BYD cancels the reconstructed surplus', () => {
+  // readings 2026-07-26 08:27:01: production 251 W, grid -261.3 W (exporting),
+  // battery_w +1538.6 W, marstek_net_w -406 — the very first sample the backend
+  // wrote after a 35-day outage, with the fleet already charging out of the BYD.
+  // Before the fix, surplus read 261.3 + 406 = +667.3 W and the loop SUSTAINED
+  // the charge at 167 W on the one device with known telemetry.
+  const { phase, decisions, diagnostics } = decide(
+    config,
+    [
+      { id: 1, name: 'Marstek 1', soc: null, chargingW: 0, dischargingW: 0 },
+      { id: 2, name: 'Marstek 2', soc: 24, chargingW: 406, dischargingW: 0 },
+    ],
+    261.3,
+    0,
+    1538.6,
+    'charge',
+    251,
+  );
+
+  expect(diagnostics.surplusW).toBeCloseTo(-871.3, 6);
+  expect(diagnostics.perChargeW).toBe(0);
+  expect(phase).toBe('idle');
+  expect(decisions.map((d) => d.action)).toStrictEqual(['stop', 'stop']);
+});
+
+test('09:19:59 glitch: 1120 W of export on 365 W of PV is not solar surplus', () => {
+  // The single 5 s sample that armed the charge: production 364.7 W with grid
+  // -1119.9 W and a CHARGING BYD (-302.6 W) — physically impossible, and one
+  // sample after grid -0.4 W / BYD +1785.8 W. The BYD veto does NOT catch this
+  // one (the BYD reads as charging); the production ceiling does.
+  const { phase, decisions, diagnostics } = decide(
+    config,
+    incidentFleet({}, { dischargingW: 398 }),
+    1119.9,
+    0,
+    -302.6,
+    'idle',
+    364.7,
+  );
+
+  expect(diagnostics.rawSurplusW).toBeCloseTo(721.9, 6);
+  expect(diagnostics.surplusW).toBe(364.7);
+  expect(diagnostics.chargeBlockedByByd).toBe(false);
+  expect(diagnostics.perChargeW).toBe(0);
+  expect(phase).toBe('idle');
+  expect(decisions.map((d) => d.action)).toStrictEqual(['stop', 'stop']);
+});
+
+test('08:27:26 glitch: the 60 s repeating export spike is rejected too', () => {
+  // readings 08:27:26: production 230.1 W, grid -1562.3 W, battery_w +204 W. The
+  // spike repeats at 08:28:26 (-804.5) and 08:29:26 (-676.9), once per minute.
+  const { phase, diagnostics } = decide(
+    config,
+    incidentFleet({ chargingW: 203 }, { chargingW: 203 }),
+    1562.3,
+    0,
+    204,
+    'charge',
+    230.1,
+  );
+
+  expect(diagnostics.surplusW).toBe(230.1);
+  expect(diagnostics.perChargeW).toBe(0);
+  expect(phase).toBe('idle');
+});
+
+test('a charge decision and a positive cover deficit are never both true', () => {
+  // Before the fix this exact cycle reported perChargeW 167 AND dischargeTargetW
+  // 871.3: "store solar" and "the house is 871 W short" cannot both hold.
+  const { diagnostics } = decide(
+    config,
+    incidentFleet({ chargingW: 203 }, { chargingW: 203 }),
+    261.3,
+    0,
+    1538.6,
+    'charge',
+    251,
+  );
+
+  expect(diagnostics.perChargeW > 0 && diagnostics.dischargeTargetW > 0).toBe(
+    false,
+  );
+});
+
+test('in cover mode the surplus is exactly the negated discharge target', () => {
+  // The two branches must read one power balance. Below the production ceiling
+  // and with the BYD discharging, surplus === -dischargeTarget identically.
+  const { diagnostics } = decide(
+    config,
+    incidentFleet({ chargingW: 250 }, {}),
+    1200,
+    0,
+    300,
+    'idle',
+    5000,
+  );
+
+  expect(diagnostics.surplusW).toBe(-diagnostics.dischargeTargetW);
+});
+
+test('property: the fleet never charges while the BYD is net discharging', () => {
+  const offenders: string[] = [];
+  for (let injectionW = 0; injectionW <= 2000; injectionW += 250) {
+    for (let importW = 0; importW <= 1000; importW += 250) {
+      // The meter never imports and exports at the same instant.
+      if (injectionW > 0 && importW > 0) continue;
+      for (let bydW = 100; bydW <= 2000; bydW += 100) {
+        for (const fleetW of [0, 200, 483, 966]) {
+          for (const previousPhase of [
+            'idle',
+            'charge',
+            'discharge',
+          ] as const) {
+            const { decisions, diagnostics } = decide(
+              config,
+              incidentFleet(
+                { chargingW: fleetW / 2 },
+                { chargingW: fleetW / 2 },
+              ),
+              injectionW,
+              importW,
+              bydW,
+              previousPhase,
+              5000,
+            );
+            if (
+              diagnostics.perChargeW > 0 ||
+              decisions.some((d) => d.action === 'charge')
+            ) {
+              offenders.push(
+                `inject=${injectionW} import=${importW} byd=${bydW} ` +
+                  `fleet=${fleetW} prev=${previousPhase}`,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  expect(offenders).toStrictEqual([]);
+});
+
+test('property: the fleet never charges above what the array produced', () => {
+  const offenders: string[] = [];
+  for (let productionW = 0; productionW <= 3000; productionW += 250) {
+    for (let injectionW = 0; injectionW <= 4000; injectionW += 250) {
+      const { diagnostics } = decide(
+        config,
+        incidentFleet({}, {}),
+        injectionW,
+        0,
+        0,
+        'idle',
+        productionW,
+      );
+      const commandedW = diagnostics.perChargeW * 2;
+      if (commandedW > productionW) {
+        offenders.push(
+          `production=${productionW} inject=${injectionW} commanded=${commandedW}`,
+        );
+      }
+    }
+  }
+
+  expect(offenders).toStrictEqual([]);
+});
+
+test('property: a charging BYD with real export still charges the fleet', () => {
+  // The mirror image, so the two invariants above cannot be satisfied by simply
+  // never charging.
+  const commanded: number[] = [];
+  for (let injectionW = 1000; injectionW <= 3000; injectionW += 500) {
+    for (let bydW = -1500; bydW <= -100; bydW += 200) {
+      const { decisions } = decide(
+        config,
+        incidentFleet({}, {}),
+        injectionW,
+        0,
+        bydW,
+        'charge',
+        injectionW + 1000,
+      );
+      commanded.push(decisions[0]?.powerW ?? -1);
+    }
+  }
+
+  expect(commanded.every((powerW) => powerW >= MIN_CHARGE_W)).toBe(true);
 });

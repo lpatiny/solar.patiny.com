@@ -1,115 +1,55 @@
-import type { ManualAction } from './marstekControl.ts';
 import type { StrategyConfig } from './strategyConfig.ts';
+import { exportableSurplus } from './strategySurplus.ts';
+import type {
+  DecisionDiagnostics,
+  DeviceDecision,
+  DeviceState,
+  Phase,
+} from './strategyTypes.ts';
 
 /** Minimum meaningful charge command; below it the battery is simply stopped. */
 export const MIN_CHARGE_W = 50;
 /** Minimum meaningful discharge command; below it the battery is simply stopped. */
 export const MIN_DISCHARGE_W = 50;
 
-/** The control phase the loop resolved this cycle. */
-export type Phase = 'charge' | 'discharge' | 'idle' | 'off' | 'stale';
-
-/** What the loop decided for one device this cycle. */
-export interface DeviceDecision {
-  deviceId: number;
-  name: string;
-  socPct: number | null;
-  action: ManualAction;
-  powerW: number;
-  sent: boolean;
-}
-
-/**
- * The intermediate quantities {@link decide} computed this cycle, surfaced so a
- * debug endpoint can explain exactly WHY the loop chose to charge, discharge, or
- * idle — without re-deriving (and risking drifting from) the decision math.
- */
-export interface DecisionDiagnostics {
-  /** Sum of charge power across all devices right now (W, ≥0). */
-  totalChargingW: number;
-  /** Sum of discharge power across all devices right now (W, ≥0). */
-  totalDischargingW: number;
-  /** Reconstructed exportable solar surplus: injection + totalCharging − totalDischarging − import. */
-  surplusW: number;
-  /** Number of devices eligible to charge (SOC known and below the ceiling). */
-  chargeEligibleCount: number;
-  /** Fleet charge cap (chargeMaxW × eligible count). */
-  chargeCapW: number;
-  /** Surplus above the injection target, clamped to the charge cap. */
-  desiredChargeW: number;
-  /** Per-battery charge setpoint candidate (0 if below {@link MIN_CHARGE_W}). */
-  perChargeW: number;
-  /** Grid balance excluding the Marstek: totalDischarging − totalCharging + import − injection. */
-  gridBalanceExcludingMarstekW: number;
-  /** Discharge target this cycle (mode-dependent). */
-  dischargeTargetW: number;
-  /** Number of devices eligible to discharge (SOC known and above the floor). */
-  dischargeEligibleCount: number;
-  /** Fleet discharge cap (dischargeMaxW × eligible count). */
-  dischargeCapW: number;
-  /** Target clamped to the discharge cap. */
-  desiredDischargeW: number;
-  /** Per-battery discharge setpoint candidate (0 if below {@link MIN_DISCHARGE_W}). */
-  perDischargeW: number;
-  /**
-   * True when a charge↔discharge reversal was demanded and converted into one
-   * stop-all cycle so the whole fleet passes through a common safe state first.
-   */
-  directionHoldoff: boolean;
-}
-
-/** A device's identity and current state, as fed to {@link decide}. */
-export interface DeviceState {
-  id: number;
-  name: string;
-  /** Current state of charge (%), or null if unknown. */
-  soc: number | null;
-  /** Charge power the device is currently drawing (W, ≥0). */
-  chargingW: number;
-  /** Discharge power the device is currently delivering (W, ≥0). */
-  dischargingW: number;
-}
+export type {
+  DecisionDiagnostics,
+  DeviceDecision,
+  DeviceState,
+  Phase,
+} from './strategyTypes.ts';
 
 /**
  * Decide each enabled Marstek device's charge/discharge action for this cycle.
  * Charging takes priority: it holds grid injection at the target by storing only
- * the exportable solar surplus above it (capped per battery). The surplus is the
- * grid export plus what the batteries already charge, MINUS any grid import — so
- * grid-sourced charging is never mistaken for surplus. When there is no surplus to
- * store, the loop discharges to cover house load — capped per battery — down to
- * the floor.
+ * the exportable solar surplus above it (capped per battery), as derived by
+ * {@link exportableSurplus} — so neither grid import nor a discharging BYD can be
+ * mistaken for solar. When there is no surplus to store, the loop discharges to
+ * cover house load — capped per battery — down to the floor.
  *
- * Discharge has two modes (`config.dischargeMode`):
+ * Discharge has two modes (`config.dischargeMode`). `cover` (the default) covers
+ * only the house load not already met by solar, from the power balance
+ * `bydW + totalDischarging + import − injection`: the grid term and the Marstek's
+ * own discharge cancel, so the target is the true post-solar house deficit —
+ * stable as the Marstek ramps (no oscillation), and with the BYD's flow
+ * subtracted so the Marstek never covers the BYD's charging. `force` discharges
+ * at {@link StrategyConfig.dischargeMaxW} per battery, throttled so grid injection
+ * never exceeds {@link StrategyConfig.injectTargetW}. Charging wins in both modes,
+ * so the whole strategy honors a single grid-injection ceiling.
  *
- * `cover` (the default) covers only the house load not already met by solar,
- * derived from the power balance: `bydW + totalDischarging + import − injection`.
- * The grid term and the Marstek's own discharge cancel, so the target is the true
- * post-solar house deficit — stable as the Marstek ramps (no oscillation) and with
- * the BYD's flow subtracted, so the Marstek never covers the BYD's charging (no
- * battery-to-battery transfer). It needs no consumption reading, so it is immune to
- * whether the meter sees the Marstek as a source.
- *
- * `force` discharges at {@link StrategyConfig.dischargeMaxW} per battery but
- * throttled so grid injection never exceeds the injection limit
- * ({@link StrategyConfig.injectTargetW}): the target is the grid balance excluding
- * the Marstek plus that limit, so the fleet deliberately exports up to the limit
- * and no further. Charging from a large solar surplus still takes priority in both
- * modes, so the whole strategy honors a single grid-injection ceiling.
- *
- * Both branches compensate the fleet's OWN flows symmetrically: the surplus adds
- * back what the batteries charge but subtracts what they discharge, and the grid
- * balance subtracts what they charge — so one battery's flow is never misread as
- * solar surplus (or house deficit) for the other to absorb. Without this, a fleet
- * briefly split across phases (a device that missed a command) self-sustains a
- * battery-to-battery transfer.
+ * Both branches read the SAME power balance and therefore can never disagree
+ * about where the power comes from: in `cover`, the discharge target is exactly
+ * the negated surplus plus the BYD's own flow. Each compensates the fleet's own
+ * flows symmetrically, so one battery's flow is never misread as solar surplus
+ * (or house deficit) for the other to absorb — without which a fleet briefly
+ * split across phases self-sustains a battery-to-battery transfer.
  *
  * A charge↔discharge reversal never happens in one step: when the math demands
  * the opposite direction of `previousPhase`, this cycle returns `idle` (stop all)
- * and the reversal proceeds next cycle. The whole fleet passes through a common
- * stopped state, so a fast flip can never leave one device charging while the
- * other discharges — and the stop also clears the persistent Manual charge slot
- * before any Passive discharge starts. Pure function of its inputs so it can be
- * unit-tested.
+ * and the reversal proceeds next cycle, so a fast flip can never leave one device
+ * charging while the other discharges — and the stop also clears the persistent
+ * Manual charge slot before any Passive discharge starts. Pure function of its
+ * inputs so it can be unit-tested.
  * @param config - the resolved strategy configuration
  * @param devices - the enabled Marstek devices with their current state
  * @param injectionW - current grid injection / export (W, ≥0)
@@ -120,6 +60,8 @@ export interface DeviceState {
  * charging — independently of whether the meter sees the Marstek.
  * @param previousPhase - the phase the loop executed last cycle; a charge↔discharge
  * reversal against it is held for one stop-all cycle. Defaults to `idle` (no holdoff).
+ * @param productionW - current PV production (W), the physical ceiling on the
+ * surplus. Defaults to no ceiling, for callers with no inverter reading.
  * @returns the phase and per-device decisions
  */
 export function decide(
@@ -129,6 +71,7 @@ export function decide(
   importW: number,
   bydW = 0,
   previousPhase: Phase = 'idle',
+  productionW = Number.POSITIVE_INFINITY,
 ): {
   phase: Phase;
   decisions: DeviceDecision[];
@@ -144,21 +87,21 @@ export function decide(
     totalDischarging += device.dischargingW;
   }
 
-  // Charge from solar surplus (priority). Reconstruct the true exportable surplus
-  // as if the fleet stopped: add back what the batteries are already charging (it
-  // had reduced the visible injection), subtract what they discharge (it had
-  // inflated it — a discharging battery must never be misread as solar for the
-  // other one to store), then subtract any grid import. When the house is
-  // importing there is no solar surplus to store, so grid-sourced charging must
-  // never be counted as surplus — otherwise at night the batteries keep charging
-  // from the grid and the loop never reaches the discharge branch (a
-  // self-perpetuating latch).
-  const surplus = injectionW + totalCharging - totalDischarging - importW;
+  // Charge from solar surplus (priority). A discharging BYD vetoes charging
+  // outright: the house is already in deficit, so every watt the fleet stores
+  // would come out of the BYD.
+  const surplus = exportableSurplus({
+    productionW,
+    injectionW,
+    importW,
+    bydW,
+    totalChargingW: totalCharging,
+    totalDischargingW: totalDischarging,
+  });
   const chargeCap = config.chargeMaxW * chargeEligible.length;
-  const desiredCharge = Math.max(
-    0,
-    Math.min(surplus - config.injectTargetW, chargeCap),
-  );
+  const desiredCharge = surplus.bydSupplying
+    ? 0
+    : Math.max(0, Math.min(surplus.surplusW - config.injectTargetW, chargeCap));
   const perCharge =
     chargeEligible.length > 0
       ? Math.min(
@@ -210,7 +153,11 @@ export function decide(
   const diagnostics: DecisionDiagnostics = {
     totalChargingW: totalCharging,
     totalDischargingW: totalDischarging,
-    surplusW: surplus,
+    surplusW: surplus.surplusW,
+    rawSurplusW: surplus.rawW,
+    bydDischargeW: surplus.bydDischargeW,
+    productionCapW: surplus.productionCapW,
+    chargeBlockedByByd: surplus.bydSupplying,
     chargeEligibleCount: chargeEligible.length,
     chargeCapW: chargeCap,
     desiredChargeW: desiredCharge,
