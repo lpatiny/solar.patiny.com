@@ -1,6 +1,7 @@
 /* eslint-disable camelcase -- TypeBox schema keys match JSON API snake_case */
 import { Type } from 'typebox';
 
+import { HOME_BATTERY_CAPACITY_WH } from '../services/energyFlow.ts';
 import {
   getCurrentBatteryControl,
   getModbusEnabled,
@@ -44,7 +45,7 @@ export default async function batteryRoutes(fastify: FastifyTyped) {
         power_w: reading?.battery_w ?? 0,
         mode,
         charge_rate_percent: ratePercent,
-        capacity_wh: 11_000,
+        capacity_wh: HOME_BATTERY_CAPACITY_WH,
         modbus_enabled: getModbusEnabled(),
       };
     },

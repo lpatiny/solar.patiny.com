@@ -10,6 +10,7 @@ import debugModbusRoutes from './routes/debugModbus.ts';
 import debugStrategyRoutes from './routes/debugStrategy.ts';
 import deviceRoutes from './routes/devices.ts';
 import dirigeraRoutes from './routes/dirigera.ts';
+import energyFlowRoutes from './routes/energyFlow.ts';
 import forecastRoutes from './routes/forecast.ts';
 import healthRoutes from './routes/health.ts';
 import historyRoutes from './routes/history.ts';
@@ -36,6 +37,7 @@ export async function buildApp() {
   await fastify.register(debugStrategyRoutes);
   await fastify.register(deviceRoutes);
   await fastify.register(dirigeraRoutes);
+  await fastify.register(energyFlowRoutes);
   await fastify.register(forecastRoutes);
   await fastify.register(healthRoutes);
   await fastify.register(realtimeRoutes);

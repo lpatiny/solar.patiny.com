@@ -1,12 +1,6 @@
 import { db } from '../db/Database.ts';
 
-/**
- * Setting key for the per-battery Marstek reserve (minimum SOC), owned by the
- * Battery Reserve config section. The strategy reuses it as the discharge floor
- * instead of keeping a duplicate of its own.
- */
-const MARSTEK_RESERVE_KEY = 'marstek_reserve_pct';
-const MARSTEK_RESERVE_DEFAULT = 5;
+import { getMarstekReservePct } from './batteryReserve.ts';
 
 /**
  * How the Marstek batteries are driven:
@@ -161,7 +155,9 @@ export function readStrategyConfig(): StrategyConfig {
     chargeCeilingPct: num(KEYS.chargeCeilingPct, DEFAULTS.chargeCeilingPct),
     dischargeMaxW: num(KEYS.dischargeMaxW, DEFAULTS.dischargeMaxW),
     dischargeMode: readDischargeMode(),
-    dischargeFloorPct: num(MARSTEK_RESERVE_KEY, MARSTEK_RESERVE_DEFAULT),
+    // The discharge floor is the shared Marstek reserve, not a duplicate of its
+    // own, so the strategy and every display agree on where "empty" is.
+    dischargeFloorPct: getMarstekReservePct(),
     intervalMs: num(KEYS.intervalMs, DEFAULTS.intervalMs),
   };
 }

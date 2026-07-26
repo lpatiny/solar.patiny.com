@@ -4,6 +4,10 @@ import { Type } from 'typebox';
 import { requireAuth } from '../auth.ts';
 import { db } from '../db/Database.ts';
 import {
+  BYD_RESERVE_DEFAULT,
+  MARSTEK_RESERVE_DEFAULT,
+} from '../services/batteryReserve.ts';
+import {
   MAX_POLL_BACKOFF_MS,
   MIN_POLL_INTERVAL_MS,
   getPollIntervalMs,
@@ -59,8 +63,8 @@ const SETTING_DEFAULTS = {
   panel_efficiency_pct: 21,
   panel_performance_ratio: 0.85,
   panel_temp_coeff_pct_per_c: 0.4,
-  byd_reserve_pct: 7,
-  marstek_reserve_pct: 5,
+  byd_reserve_pct: BYD_RESERVE_DEFAULT,
+  marstek_reserve_pct: MARSTEK_RESERVE_DEFAULT,
 } as const;
 
 function setting(key: keyof typeof SETTING_DEFAULTS): number {
