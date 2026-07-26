@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 
+import type { CompactEnergyFlowPayload } from '../energyFlow.ts';
 import { computeEnergyFlow } from '../energyFlow.ts';
 
 test('sunny surplus: solar covers the house, charges the battery, exports the rest', () => {
@@ -141,4 +142,28 @@ test('every source and sink total is exactly covered by its flows', () => {
       9,
     );
   }
+});
+
+test('the compact payload stays well inside the ESP32 HTTP buffer', () => {
+  // The panel reads this into a 1000-byte buffer and warns past 900. Values are
+  // deliberately at their widest: a saturated array, so the check is worst-case.
+  const widest: CompactEnergyFlowPayload = {
+    pv: 12_345,
+    ba: 21_299,
+    gr: 12_345,
+    co: 12_345,
+    ph: 12_345,
+    pb: 12_345,
+    pg: 12_345,
+    bh: 12_345,
+    bg: 12_345,
+    gh: 12_345,
+    gb: 12_345,
+    st: 1,
+  };
+  const encoded = JSON.stringify(widest);
+  expect(encoded.length).toBeLessThan(200);
+  expect(Object.keys(widest)).toHaveLength(12);
+  // Every key is two characters, so adding a field can never silently bloat it.
+  for (const key of Object.keys(widest)) expect(key).toHaveLength(2);
 });

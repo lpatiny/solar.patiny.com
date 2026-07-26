@@ -1,7 +1,10 @@
 /* eslint-disable camelcase -- TypeBox schema keys match JSON API snake_case */
 import { Type } from 'typebox';
 
-import { collectEnergyFlow } from '../services/energyFlow.ts';
+import {
+  collectCompactEnergyFlow,
+  collectEnergyFlow,
+} from '../services/energyFlow.ts';
 import type { FastifyTyped } from '../types.ts';
 
 const W = Type.Number({ description: 'Power in watts (never negative).' });
@@ -37,6 +40,24 @@ const EnergyFlowResponse = Type.Object({
   grid_to_battery_w: W,
 });
 
+const CompactResponse = Type.Object(
+  {
+    pv: Type.Number({ description: 'Solar production (W).' }),
+    ba: Type.Number({ description: 'Usable stored energy (Wh).' }),
+    gr: Type.Number({ description: 'Grid magnitude (W), either direction.' }),
+    co: Type.Number({ description: 'Household consumption (W).' }),
+    ph: Type.Number({ description: 'Solar → home (W).' }),
+    pb: Type.Number({ description: 'Solar → battery (W).' }),
+    pg: Type.Number({ description: 'Solar → grid (W).' }),
+    bh: Type.Number({ description: 'Battery → home (W).' }),
+    bg: Type.Number({ description: 'Battery → grid (W).' }),
+    gh: Type.Number({ description: 'Grid → home (W).' }),
+    gb: Type.Number({ description: 'Grid → battery (W).' }),
+    st: Type.Number({ description: '1 when the reading is stale, else 0.' }),
+  },
+  { description: 'Just the values the LED wall draws, ~110 bytes.' },
+);
+
 const ErrorResponse = Type.Object({ error: Type.String() });
 
 /**
@@ -61,6 +82,30 @@ export default async function energyFlowRoutes(fastify: FastifyTyped) {
     },
     async (_request, reply) => {
       const payload = collectEnergyFlow();
+      if (!payload) {
+        return reply
+          .code(503)
+          .send({ error: 'No data yet — check Fronius connectivity' });
+      }
+      return payload;
+    },
+  );
+
+  fastify.get(
+    '/api/energy-flow/compact',
+    {
+      schema: {
+        tags: ['realtime'],
+        summary: 'The LED wall payload: four levels and six links, ~110 bytes.',
+        description:
+          'The same figures as /api/energy-flow reduced to exactly what the ' +
+          'wall draws, under two-letter keys. Built for the ESP32 panel ' +
+          '(hackuarium/esp32-c3), which parses it into a fixed-size document.',
+        response: { 200: CompactResponse, 503: ErrorResponse },
+      },
+    },
+    async (_request, reply) => {
+      const payload = collectCompactEnergyFlow();
       if (!payload) {
         return reply
           .code(503)

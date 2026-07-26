@@ -178,6 +178,67 @@ export interface EnergyFlowPayload {
 }
 
 /**
+ * The `/api/energy-flow/compact` payload: exactly the values the LED wall draws,
+ * under two-letter keys. Nothing derived, nothing the renderer does not use — it
+ * is parsed on an ESP32 whose HTTP buffer is 1000 bytes and whose JSON document
+ * is a fixed-size pool, so every field costs.
+ */
+export interface CompactEnergyFlowPayload {
+  /** Solar production (W). */
+  pv: number;
+  /** Usable stored energy across every battery (Wh), reserve floors removed. */
+  ba: number;
+  /** Grid magnitude (W), either direction — the flux shows which way. */
+  gr: number;
+  /** Household consumption (W). */
+  co: number;
+  /** Solar → home (W). */
+  ph: number;
+  /** Solar → battery (W). */
+  pb: number;
+  /** Solar → grid (W). */
+  pg: number;
+  /** Battery → home (W). */
+  bh: number;
+  /** Battery → grid (W). */
+  bg: number;
+  /** Grid → home (W). */
+  gh: number;
+  /** Grid → battery (W). */
+  gb: number;
+  /** 1 when the underlying reading has aged out, else 0. */
+  st: number;
+}
+
+/**
+ * Reduce the full payload to just what the LED wall renders.
+ *
+ * The four squares plus the six links between them, nothing else: no timestamp,
+ * no capacity, no SOC, no separate import/export (the wall shows the magnitude
+ * and reads direction off the flux). Two-letter keys keep it around 110 bytes so
+ * it fits an embedded client with room to spare.
+ * @returns The compact payload, or null when no reading has been taken yet.
+ */
+export function collectCompactEnergyFlow(): CompactEnergyFlowPayload | null {
+  const full = collectEnergyFlow();
+  if (!full) return null;
+  return {
+    pv: full.production_w,
+    ba: full.battery_stored_wh,
+    gr: full.grid_import_w + full.grid_export_w,
+    co: full.consumption_w,
+    ph: full.solar_to_home_w,
+    pb: full.solar_to_battery_w,
+    pg: full.solar_to_grid_w,
+    bh: full.battery_to_home_w,
+    bg: full.battery_to_grid_w,
+    gh: full.grid_to_home_w,
+    gb: full.grid_to_battery_w,
+    st: full.is_stale ? 1 : 0,
+  };
+}
+
+/**
  * Build the live energy-flow payload from the cached Fronius reading and the
  * Marstek telemetry. The Marstek net power is folded into the battery flow, so
  * the household load is the true load behind the meter.
