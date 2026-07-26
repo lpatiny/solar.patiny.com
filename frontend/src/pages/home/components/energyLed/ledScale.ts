@@ -61,6 +61,41 @@ export function ledLevels(value: number, scale: LedScale): LedLevels {
   return { ring, center, saturated: false };
 }
 
+/** How a square shared by two stacked sources splits between them. */
+export interface StackedLedLevels extends LedLevels {
+  /** Ring LEDs owned by the lower source; the rest belong to the upper one. */
+  lowerRing: number;
+  /** True when the centre remainder belongs to the upper source. */
+  upperCenter: boolean;
+}
+
+/**
+ * Split a square between two sources stacked in order: the lower one fills the
+ * ring first and the upper one continues where it stops, so the boundary shows
+ * how the total is shared. The lit-LED counts come from the total exactly as in
+ * {@link ledLevels}; only the colour boundary is added. The centre sits at the
+ * top of the stack, so it belongs to the upper source as soon as that source
+ * holds at least one centre unit.
+ * @param lowerValue - Amount contributed by the source drawn first.
+ * @param upperValue - Amount contributed by the source stacked on top.
+ * @param scale - What one ring LED and one centre LED are worth.
+ * @returns The lit-LED counts plus where the two sources meet.
+ */
+export function stackedLedLevels(
+  lowerValue: number,
+  upperValue: number,
+  scale: LedScale,
+): StackedLedLevels {
+  const lower = Math.max(lowerValue, 0);
+  const upper = Math.max(upperValue, 0);
+  const levels = ledLevels(lower + upper, scale);
+  return {
+    ...levels,
+    lowerRing: Math.min(Math.round(lower / scale.ringUnit), levels.ring),
+    upperCenter: upper >= scale.centerUnit,
+  };
+}
+
 /** Row of each ring LED within its square, clockwise from the top-left corner. */
 const RING_ROWS = [0, 0, 0, 0, 0, 1, 2, 3, 4, 4, 4, 4, 4, 3, 2, 1];
 /** Column of each ring LED, matching {@link RING_ROWS}. */

@@ -11,6 +11,10 @@ export interface EnergyFlowData {
   grid_export_w: number;
   battery_stored_wh: number;
   battery_capacity_wh: number;
+  byd_stored_wh: number;
+  byd_capacity_wh: number;
+  marstek_stored_wh: number;
+  marstek_capacity_wh: number;
   battery_soc_pct: number;
   battery_charge_w: number;
   battery_discharge_w: number;

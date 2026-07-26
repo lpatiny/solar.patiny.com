@@ -9,6 +9,7 @@ import {
   formatWh,
   ledLevels,
   ringCell,
+  stackedLedLevels,
 } from '../ledScale.ts';
 
 test('power below one ring unit only lights the centre', () => {
@@ -72,6 +73,46 @@ test('the usable fleet spans the ring without ever saturating', () => {
     center: 7,
     saturated: false,
   });
+});
+
+test('the battery ring is filled by the BYD first and the Marstek after it', () => {
+  // 10 230 Wh in the BYD (8.2 ring LEDs) plus 8 192 Wh of Marstek: 14 ring LEDs
+  // in all, the first 8 of them the BYD's, and the 922 Wh remainder is Marstek.
+  expect(stackedLedLevels(10_230, 8192, ENERGY_SCALE)).toStrictEqual({
+    ring: 14,
+    center: 7,
+    saturated: false,
+    lowerRing: 8,
+    upperCenter: true,
+  });
+});
+
+test('an empty Marstek fleet leaves the whole battery square in the BYD green', () => {
+  const levels = stackedLedLevels(6300, 0, ENERGY_SCALE);
+  expect(levels).toStrictEqual({
+    ring: 5,
+    center: 0,
+    saturated: false,
+    lowerRing: 5,
+    upperCenter: false,
+  });
+});
+
+test('an empty BYD leaves the boundary at zero, so the ring is all Marstek', () => {
+  expect(stackedLedLevels(0, 4300, ENERGY_SCALE)).toStrictEqual({
+    ring: 3,
+    center: 4,
+    saturated: false,
+    lowerRing: 0,
+    upperCenter: true,
+  });
+});
+
+test('the stacked total lights exactly the same LEDs as the plain level', () => {
+  const stacked = stackedLedLevels(10_230, 8192, ENERGY_SCALE);
+  const plain = ledLevels(18_422, ENERGY_SCALE);
+  expect(stacked.ring).toBe(plain.ring);
+  expect(stacked.center).toBe(plain.center);
 });
 
 test('a negative value lights nothing', () => {

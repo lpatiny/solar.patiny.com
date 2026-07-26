@@ -112,10 +112,23 @@ export function computeEnergyFlow(input: EnergyFlowInput): EnergyFlowResult {
   };
 }
 
-/** Energy stored across every battery, and the capacity it is stored in. */
+/**
+ * Energy stored across every battery, and the capacity it is stored in, kept
+ * split by pack family: the wall paints the BYD share and the Marstek share of
+ * the level in two different greens, so the boundary shows which pack is
+ * actually holding the charge.
+ */
 export interface StoredEnergy {
   storedWh: number;
   capacityWh: number;
+  /** Usable energy in the Fronius-attached BYD pack alone. */
+  bydStoredWh: number;
+  /** Usable capacity of the BYD pack alone. */
+  bydCapacityWh: number;
+  /** Usable energy summed over every Marstek reporting fresh telemetry. */
+  marstekStoredWh: number;
+  /** Usable capacity of those same Marstek packs. */
+  marstekCapacityWh: number;
 }
 
 /**
@@ -125,7 +138,7 @@ export interface StoredEnergy {
  * empty rather than as a permanently-lit remainder. A stale device is skipped
  * entirely, so the level never counts a pack we cannot currently see.
  * @param homeSocPct - BYD state of charge in percent.
- * @returns Usable stored energy and usable capacity, both in Wh.
+ * @returns Usable stored energy and usable capacity, in total and per family.
  */
 export function collectStoredEnergy(homeSocPct: number): StoredEnergy {
   const home = usableEnergy(
@@ -133,8 +146,8 @@ export function collectStoredEnergy(homeSocPct: number): StoredEnergy {
     HOME_BATTERY_CAPACITY_WH,
     getBydReservePct(),
   );
-  let storedWh = home.storedWh;
-  let capacityWh = home.capacityWh;
+  let marstekStoredWh = 0;
+  let marstekCapacityWh = 0;
 
   const marstekReservePct = getMarstekReservePct();
   for (const device of db.listDevices()) {
@@ -146,10 +159,17 @@ export function collectStoredEnergy(homeSocPct: number): StoredEnergy {
       values.energy_kwh * 1000,
       marstekReservePct,
     );
-    storedWh += pack.storedWh;
-    capacityWh += pack.capacityWh;
+    marstekStoredWh += pack.storedWh;
+    marstekCapacityWh += pack.capacityWh;
   }
-  return { storedWh, capacityWh };
+  return {
+    storedWh: home.storedWh + marstekStoredWh,
+    capacityWh: home.capacityWh + marstekCapacityWh,
+    bydStoredWh: home.storedWh,
+    bydCapacityWh: home.capacityWh,
+    marstekStoredWh,
+    marstekCapacityWh,
+  };
 }
 
 /** The `/api/energy-flow` payload. */
@@ -164,6 +184,14 @@ export interface EnergyFlowPayload {
   battery_stored_wh: number;
   /** Usable capacity, above the reserve floors. */
   battery_capacity_wh: number;
+  /** The BYD pack's share of `battery_stored_wh`. */
+  byd_stored_wh: number;
+  /** The BYD pack's share of `battery_capacity_wh`. */
+  byd_capacity_wh: number;
+  /** The Marstek fleet's share of `battery_stored_wh`. */
+  marstek_stored_wh: number;
+  /** The Marstek fleet's share of `battery_capacity_wh`. */
+  marstek_capacity_wh: number;
   /** Usable charge: 0 % is the reserve floor, 100 % is full. */
   battery_soc_pct: number;
   battery_charge_w: number;
@@ -188,6 +216,10 @@ export interface CompactEnergyFlowPayload {
   pv: number;
   /** Usable stored energy across every battery (Wh), reserve floors removed. */
   ba: number;
+  /** The BYD pack's share of `ba` (Wh) — the wall paints it a different green. */
+  bd: number;
+  /** The Marstek fleet's share of `ba` (Wh). */
+  mk: number;
   /** Grid magnitude (W), either direction — the flux shows which way. */
   gr: number;
   /** Household consumption (W). */
@@ -225,6 +257,8 @@ export function collectCompactEnergyFlow(): CompactEnergyFlowPayload | null {
   return {
     pv: full.production_w,
     ba: full.battery_stored_wh,
+    bd: full.byd_stored_wh,
+    mk: full.marstek_stored_wh,
     gr: full.grid_import_w + full.grid_export_w,
     co: full.consumption_w,
     ph: full.solar_to_home_w,
@@ -259,7 +293,14 @@ export function collectEnergyFlow(): EnergyFlowPayload | null {
     gridW: reading.grid_w,
     batteryW,
   });
-  const { storedWh, capacityWh } = collectStoredEnergy(reading.battery_soc);
+  const {
+    storedWh,
+    capacityWh,
+    bydStoredWh,
+    bydCapacityWh,
+    marstekStoredWh,
+    marstekCapacityWh,
+  } = collectStoredEnergy(reading.battery_soc);
 
   return {
     timestamp: reading.timestamp,
@@ -270,6 +311,10 @@ export function collectEnergyFlow(): EnergyFlowPayload | null {
     grid_export_w: Math.round(flow.gridExportW),
     battery_stored_wh: Math.round(storedWh),
     battery_capacity_wh: Math.round(capacityWh),
+    byd_stored_wh: Math.round(bydStoredWh),
+    byd_capacity_wh: Math.round(bydCapacityWh),
+    marstek_stored_wh: Math.round(marstekStoredWh),
+    marstek_capacity_wh: Math.round(marstekCapacityWh),
     battery_soc_pct:
       capacityWh > 0 ? Math.round((storedWh / capacityWh) * 1000) / 10 : 0,
     battery_charge_w: Math.round(flow.batteryChargeW),

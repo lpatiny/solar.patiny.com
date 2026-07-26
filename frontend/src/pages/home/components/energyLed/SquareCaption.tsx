@@ -7,6 +7,8 @@ interface SquareCaptionProps {
   value: string;
   /** Extra state line under the value, e.g. "charging 1.2 kW". */
   sub?: string;
+  /** A second state line under {@link sub}, e.g. how a level splits per pack. */
+  extra?: string;
   /** The square's lit colour, used for the value. */
   color: string;
 }
@@ -20,6 +22,7 @@ interface SquareCaptionProps {
  * @param root0.title - The quantity's name.
  * @param root0.value - The formatted quantity.
  * @param root0.sub - Optional state line under the value.
+ * @param root0.extra - Optional second state line.
  * @param root0.color - The square's lit colour.
  * @returns The caption text.
  */
@@ -29,11 +32,13 @@ export default function SquareCaption({
   title,
   value,
   sub,
+  extra,
   color,
 }: SquareCaptionProps) {
   const titleY = y + 24;
   const valueY = titleY + 25;
   const subY = valueY + 17;
+  const extraY = subY + 15;
 
   return (
     <g>
@@ -66,6 +71,16 @@ export default function SquareCaption({
           style={{ fill: 'var(--text-secondary)', fontSize: 11 }}
         >
           {sub}
+        </text>
+      )}
+      {extra && (
+        <text
+          x={x}
+          y={extraY}
+          textAnchor="middle"
+          style={{ fill: 'var(--text-secondary)', fontSize: 10 }}
+        >
+          {extra}
         </text>
       )}
     </g>

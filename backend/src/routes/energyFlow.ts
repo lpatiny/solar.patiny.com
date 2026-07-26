@@ -25,6 +25,18 @@ const EnergyFlowResponse = Type.Object({
   battery_capacity_wh: Type.Number({
     description: 'Usable capacity across every pack, above the reserve floors.',
   }),
+  byd_stored_wh: Type.Number({
+    description: "The BYD pack's share of battery_stored_wh.",
+  }),
+  byd_capacity_wh: Type.Number({
+    description: "The BYD pack's share of battery_capacity_wh.",
+  }),
+  marstek_stored_wh: Type.Number({
+    description: "The Marstek fleet's share of battery_stored_wh.",
+  }),
+  marstek_capacity_wh: Type.Number({
+    description: "The Marstek fleet's share of battery_capacity_wh.",
+  }),
   battery_soc_pct: Type.Number({
     description: 'Usable charge: 0 % is the reserve floor, 100 % is full.',
   }),
@@ -44,6 +56,8 @@ const CompactResponse = Type.Object(
   {
     pv: Type.Number({ description: 'Solar production (W).' }),
     ba: Type.Number({ description: 'Usable stored energy (Wh).' }),
+    bd: Type.Number({ description: "The BYD pack's share of ba (Wh)." }),
+    mk: Type.Number({ description: "The Marstek fleet's share of ba (Wh)." }),
     gr: Type.Number({ description: 'Grid magnitude (W), either direction.' }),
     co: Type.Number({ description: 'Household consumption (W).' }),
     ph: Type.Number({ description: 'Solar → home (W).' }),

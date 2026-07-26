@@ -26,10 +26,18 @@ const SOLAR_COLORS: LedColors = {
   low: '#505000',
   background: '#101000',
 };
-const BATTERY_COLORS: LedColors = {
+// The battery square carries two greens: the BYD share of the level fills the
+// ring first in pure green, the Marstek share continues in mint, so the boundary
+// says which pack is holding the charge.
+const BYD_COLORS: LedColors = {
   high: '#00ff00',
   low: '#005000',
   background: '#001000',
+};
+const MARSTEK_COLORS: LedColors = {
+  high: '#00ff80',
+  low: '#005028',
+  background: '#001008',
 };
 const GRID_COLORS: LedColors = {
   high: '#ffffff',
@@ -45,7 +53,7 @@ const FLUX_COLOR = '#0000ff';
 const FLUX_BACKGROUND = '#000010';
 
 /** Vertical room above the wall for the two top captions. */
-const TOP_CAPTION_H = 76;
+const TOP_CAPTION_H = 92;
 /** Vertical room below the wall for the two bottom captions. */
 const BOTTOM_CAPTION_H = 76;
 /** Horizontal centre of the left-hand column of squares. */
@@ -69,6 +77,8 @@ export default function EnergyLedPanel() {
   const gridImport = data?.grid_import_w ?? 0;
   const gridExport = data?.grid_export_w ?? 0;
   const storedWh = data?.battery_stored_wh ?? 0;
+  const bydStoredWh = data?.byd_stored_wh ?? 0;
+  const marstekStoredWh = data?.marstek_stored_wh ?? 0;
   const charge = data?.battery_charge_w ?? 0;
   const discharge = data?.battery_discharge_w ?? 0;
   const gridToBattery = data?.grid_to_battery_w ?? 0;
@@ -139,7 +149,8 @@ export default function EnergyLedPanel() {
           title="Battery level"
           value={formatWh(storedWh)}
           sub={`${Math.round(data?.battery_soc_pct ?? 0)} % · ${batterySub}`}
-          color={BATTERY_COLORS.high}
+          extra={`BYD ${formatWh(bydStoredWh)} · Marstek ${formatWh(marstekStoredWh)}`}
+          color={BYD_COLORS.high}
         />
 
         <g transform={`translate(0 ${TOP_CAPTION_H})`}>
@@ -188,9 +199,10 @@ export default function EnergyLedPanel() {
           />
           <LedSquare
             origin={BATTERY_ORIGIN}
-            value={storedWh}
+            value={bydStoredWh}
             scale={ENERGY_SCALE}
-            colors={BATTERY_COLORS}
+            colors={BYD_COLORS}
+            stacked={{ value: marstekStoredWh, colors: MARSTEK_COLORS }}
           />
           <LedSquare
             origin={GRID_ORIGIN}
@@ -233,8 +245,10 @@ export default function EnergyLedPanel() {
       >
         Around a square: one LED = 500 W (1.25 kWh for the battery). Inside it:
         one LED = 50 W (125 Wh). The battery counts only usable energy — the
-        reserve floor is left out, so empty really is dark. The blue dots march
-        faster as the transfer grows.
+        reserve floor is left out, so empty really is dark — and splits in two
+        greens: the BYD share fills the ring first in pure green, the Marstek
+        share continues in mint. The blue dots march faster as the transfer
+        grows.
       </p>
     </div>
   );
