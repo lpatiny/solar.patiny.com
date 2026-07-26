@@ -2,7 +2,12 @@ import { db } from '../db/Database.ts';
 
 import { getLatest, getPollFailures, nextPollDelay } from './batteryPoller.ts';
 import type { LastCommandInfo } from './batteryStrategy.ts';
-import { getLastCommands, getLastPhase } from './batteryStrategy.ts';
+import {
+  COMMAND_TRUST_MS,
+  getLastCommands,
+  getLastPhase,
+} from './batteryStrategy.ts';
+import { resolveFleetFlow } from './fleetFlow.ts';
 import { getStaleMs } from './marstekPollCadence.ts';
 import { getCurrentReading } from './poller.ts';
 import type { StrategyConfig, StrategyMode } from './strategyConfig.ts';
@@ -78,11 +83,24 @@ function deviceDebugs(now: number): DeviceDebug[] {
     .listDevices()
     .filter((d) => d.enabled && d.type === 'marstek');
   const staleMs = getStaleMs();
+  const commands = new Map(getLastCommands().map((c) => [c.deviceId, c]));
   return marstek.map((d) => {
     const entry = getLatest(d.id);
     const ageMs = entry && entry.valuesAt > 0 ? now - entry.valuesAt : null;
     const fresh = ageMs !== null && ageMs <= staleMs;
-    const ac = fresh ? (entry?.values?.ac_power_w ?? null) : null;
+    // Resolved exactly as the loop does, so the debug view still explains the
+    // real decision now that a command can outrank lagging telemetry.
+    const flow = resolveFleetFlow(
+      fresh && entry
+        ? {
+            valuesAt: entry.valuesAt,
+            acPowerW: entry.values?.ac_power_w ?? null,
+          }
+        : null,
+      commands.get(d.id) ?? null,
+      now,
+      COMMAND_TRUST_MS,
+    );
     return {
       id: d.id,
       name: d.name,
@@ -94,8 +112,8 @@ function deviceDebugs(now: number): DeviceDebug[] {
       ageMs,
       fresh,
       usedSocPct: fresh ? (entry?.values?.soc_pct ?? null) : null,
-      usedChargingW: ac !== null && ac < 0 ? -ac : 0,
-      usedDischargingW: ac !== null && ac > 0 ? ac : 0,
+      usedChargingW: flow.chargingW,
+      usedDischargingW: flow.dischargingW,
       pollError: entry?.error ?? null,
       pollFailures: getPollFailures(d.id),
       nextPollMs: nextPollDelay(d.id),

@@ -2,6 +2,8 @@ import { db } from '../db/Database.ts';
 import { withTimeout } from '../utils/withTimeout.ts';
 
 import { getLatest } from './batteryPoller.ts';
+import type { FlowSample } from './fleetFlow.ts';
+import { resolveFleetFlow } from './fleetFlow.ts';
 import type { ManualAction } from './marstekControl.ts';
 import { setMarstekUdpManual } from './marstekControl.ts';
 import { getStaleMs } from './marstekPollCadence.ts';
@@ -28,6 +30,13 @@ const SETPOINT_DEADBAND_W = 50;
  * loop always renews it before it expires.
  */
 const DISCHARGE_CD_S = 150;
+/**
+ * How long a confirmed command is assumed to still describe what a battery is
+ * doing, when telemetry has not caught up with it yet. Set to the discharge
+ * countdown: past it the device has stopped on its own, so trusting the command
+ * further would be a fiction.
+ */
+export const COMMAND_TRUST_MS = DISCHARGE_CD_S * 1000;
 /** Refresh a held discharge command once it is older than this (ms). */
 const DISCHARGE_REFRESH_MS = 60_000;
 /**
@@ -86,14 +95,18 @@ function freshValues(deviceId: number): MarstekValues | null {
   return entry.values;
 }
 
-function chargingNow(deviceId: number): number {
-  const ac = freshValues(deviceId)?.ac_power_w ?? null;
-  return ac !== null && ac < 0 ? -ac : 0;
-}
-
-function dischargingNow(deviceId: number): number {
-  const ac = freshValues(deviceId)?.ac_power_w ?? null;
-  return ac !== null && ac > 0 ? ac : 0;
+/**
+ * The device's latest fresh telemetry as a flow sample, timestamped so
+ * {@link resolveFleetFlow} can tell whether it predates our last command.
+ */
+function flowSample(deviceId: number): FlowSample | null {
+  const entry = getLatest(deviceId);
+  if (!entry || entry.valuesAt === 0) return null;
+  if (Date.now() - entry.valuesAt > getStaleMs()) return null;
+  return {
+    valuesAt: entry.valuesAt,
+    acPowerW: entry.values?.ac_power_w ?? null,
+  };
 }
 
 function socOf(deviceId: number): number | null {
@@ -200,12 +213,20 @@ async function runCycle(): Promise<void> {
   const devices = db
     .listDevices()
     .filter((d) => d.enabled && d.type === 'marstek');
+  // Compensate the fleet's own flow from the commanded setpoint whenever the
+  // telemetry is older than the command: at a 30 s loop against 60 s telemetry the
+  // measurement cannot yet show what we just asked for, and feeding it back makes
+  // the loop over-correct and limit-cycle at the loop period.
   const withState = devices.map((d) => ({
     id: d.id,
     name: d.name,
     soc: socOf(d.id),
-    chargingW: chargingNow(d.id),
-    dischargingW: dischargingNow(d.id),
+    ...resolveFleetFlow(
+      flowSample(d.id),
+      lastCommand.get(d.id) ?? null,
+      now,
+      COMMAND_TRUST_MS,
+    ),
   }));
   const importW = Math.max(reading.grid_w, 0);
   const { phase, decisions, diagnostics } = decide(
