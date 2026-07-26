@@ -29,6 +29,7 @@ import TemperatureHistoryChart from './components/TemperatureHistoryChart.tsx';
 import TemperaturesCard from './components/TemperaturesCard.tsx';
 import WeatherChart from './components/WeatherChart.tsx';
 import { sumMarstekPowerW, sumStoredKwh } from './components/batteryStatus.ts';
+import EnergyLedPanel from './components/energyLed/EnergyLedPanel.tsx';
 import { useAuth } from './components/useAuth.ts';
 import { useBatteryDevicesLive } from './components/useBatteryDevicesLive.ts';
 
@@ -117,6 +118,9 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<string>(
     () => localStorage.getItem('solar-active-tab') ?? 'overview',
+  );
+  const [overviewView, setOverviewView] = useState<'cards' | 'wall'>(() =>
+    localStorage.getItem('solar-overview-view') === 'wall' ? 'wall' : 'cards',
   );
   const [historyRange, setHistoryRange] = useState<{
     from: number;
@@ -379,13 +383,39 @@ export default function HomePage() {
     });
   }
 
+  function selectOverviewView(view: 'cards' | 'wall') {
+    setOverviewView(view);
+    localStorage.setItem('solar-overview-view', view);
+  }
+
+  const overviewSwitch = (
+    <ButtonGroup variant="minimal" style={{ paddingTop: 20 }}>
+      <Button
+        size="small"
+        icon="grid-view"
+        active={overviewView === 'cards'}
+        onClick={() => selectOverviewView('cards')}
+      >
+        Dashboard
+      </Button>
+      <Button
+        size="small"
+        icon="layout-grid"
+        active={overviewView === 'wall'}
+        onClick={() => selectOverviewView('wall')}
+      >
+        Energy wall
+      </Button>
+    </ButtonGroup>
+  );
+
   const overviewPanel = (
     <div
       style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
         gap: 16,
-        paddingTop: 20,
+        paddingTop: 16,
       }}
     >
       <PowerFlowDiagram
@@ -415,7 +445,7 @@ export default function HomePage() {
           homeHost={config?.fronius_host || config?.modbus_host || null}
           homeCapacityKwh={battery.capacity_wh / 1000}
           homeReservePct={config?.byd_reserve_pct ?? 7}
-          marstekReservePct={config?.marstek_reserve_pct ?? 5}
+          marstekReservePct={config?.marstek_reserve_pct ?? 20}
           homeOffline={realtime?.is_stale ?? false}
           devices={devices}
           liveById={liveById}
@@ -424,6 +454,12 @@ export default function HomePage() {
       )}
       <ChargingStrategyChart />
       <DayPowerChart />
+    </div>
+  );
+
+  const wallPanel = (
+    <div style={{ paddingTop: 16 }}>
+      <EnergyLedPanel />
     </div>
   );
 
@@ -637,7 +673,16 @@ export default function HomePage() {
         size="large"
         animate
       >
-        <Tab id="overview" title="Overview" panel={overviewPanel} />
+        <Tab
+          id="overview"
+          title="Overview"
+          panel={
+            <>
+              {overviewSwitch}
+              {overviewView === 'wall' ? wallPanel : overviewPanel}
+            </>
+          }
+        />
         <Tab id="electrical" title="Electrical" panel={electricalPanel} />
         <Tab id="batteries" title="Batteries" panel={<BatteriesTab />} />
         <Tab id="history" title="History" panel={historyPanel} />

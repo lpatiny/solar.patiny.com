@@ -7,7 +7,10 @@
     "build": "vite build",
     "check-types": "tsc --noEmit",
     "dev": "vite",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "npm run test-only && npm run check-types",
+    "test-only": "vitest run --coverage",
+    "test-watch": "vitest"
   },
   "dependencies": {
     "@blueprintjs/core": "^6.16.0",
@@ -23,8 +26,10 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "^4.1.8",
     "@zakodium/tsconfig": "^1.0.5",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vitest": "^4.1.8"
   },
   "volta": {
     "extends": "../package.json"

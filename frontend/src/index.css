@@ -156,6 +156,34 @@ body {
   }
 }
 
+/* Energy wall: a lit LED blooms through the panel's diffuser. `color` is set
+   inline per LED so the glow always matches the LED's own colour. */
+.led-on {
+  filter: drop-shadow(0 0 5px currentcolor) drop-shadow(0 0 11px currentcolor);
+}
+
+/* One flux LED lights for a third of the cycle; each of the three phases is
+   offset by a negative animation-delay, so the lit dot marches along the link. */
+.led-flux-dot {
+  animation-name: led-flux-march;
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+}
+
+@keyframes led-flux-march {
+  0% {
+    opacity: 1;
+  }
+
+  33.33% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
 .card-title {
   color: var(--text-secondary);
   font-size: 11px;

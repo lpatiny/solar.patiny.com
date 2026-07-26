@@ -1,0 +1,138 @@
+import { expect, test } from 'vitest';
+
+import { fluxCells } from '../ledLayout.ts';
+import {
+  ENERGY_SCALE,
+  POWER_SCALE,
+  centerCell,
+  fluxStepSeconds,
+  formatWh,
+  ledLevels,
+  ringCell,
+} from '../ledScale.ts';
+
+test('power below one ring unit only lights the centre', () => {
+  expect(ledLevels(320, POWER_SCALE)).toStrictEqual({
+    ring: 0,
+    center: 6,
+    saturated: false,
+  });
+});
+
+test('power splits into ring units and a centre remainder', () => {
+  // 2 350 W = 4 ring LEDs (2 000 W) + 7 centre LEDs (350 W).
+  expect(ledLevels(2350, POWER_SCALE)).toStrictEqual({
+    ring: 4,
+    center: 7,
+    saturated: false,
+  });
+});
+
+test('a full ring is exactly 8 kW and does not saturate', () => {
+  expect(ledLevels(8000, POWER_SCALE)).toStrictEqual({
+    ring: 16,
+    center: 0,
+    saturated: false,
+  });
+});
+
+test('past a full ring the square saturates', () => {
+  expect(ledLevels(8500, POWER_SCALE)).toStrictEqual({
+    ring: 16,
+    center: 9,
+    saturated: true,
+  });
+});
+
+test('battery energy uses 1.25 kWh per ring LED and 125 Wh per centre LED', () => {
+  // 12 400 Wh = 9 ring LEDs (11.25 kWh) + 9 centre LEDs (1.125 kWh).
+  expect(ledLevels(12_400, ENERGY_SCALE)).toStrictEqual({
+    ring: 9,
+    center: 9,
+    saturated: false,
+  });
+  // 7 000 Wh = 5 ring LEDs (6.25 kWh) + 6 centre LEDs (750 Wh).
+  expect(ledLevels(7000, ENERGY_SCALE)).toStrictEqual({
+    ring: 5,
+    center: 6,
+    saturated: false,
+  });
+});
+
+test('the usable fleet spans the ring without ever saturating', () => {
+  // Empty means sitting on the reserve floors, which the API already subtracts.
+  expect(ledLevels(0, ENERGY_SCALE)).toStrictEqual({
+    ring: 0,
+    center: 0,
+    saturated: false,
+  });
+  // Full is 18 422 Wh usable (see batteryReserve.test.ts) against a 20 kWh ring.
+  expect(ledLevels(18_422, ENERGY_SCALE)).toStrictEqual({
+    ring: 14,
+    center: 7,
+    saturated: false,
+  });
+});
+
+test('a negative value lights nothing', () => {
+  expect(ledLevels(-500, POWER_SCALE)).toStrictEqual({
+    ring: 0,
+    center: 0,
+    saturated: false,
+  });
+});
+
+test('the ring walks the perimeter clockwise from the top-left corner', () => {
+  expect(ringCell(0)).toStrictEqual({ row: 0, column: 0 });
+  expect(ringCell(4)).toStrictEqual({ row: 0, column: 4 });
+  expect(ringCell(8)).toStrictEqual({ row: 4, column: 4 });
+  expect(ringCell(12)).toStrictEqual({ row: 4, column: 0 });
+  expect(ringCell(15)).toStrictEqual({ row: 1, column: 0 });
+});
+
+test('the centre fills the 3x3 block row by row', () => {
+  expect(centerCell(0)).toStrictEqual({ row: 1, column: 1 });
+  expect(centerCell(4)).toStrictEqual({ row: 2, column: 2 });
+  expect(centerCell(8)).toStrictEqual({ row: 3, column: 3 });
+});
+
+test('flux dots march faster as the power grows, within the panel limits', () => {
+  expect(fluxStepSeconds(0)).toBe(1);
+  expect(fluxStepSeconds(200)).toBe(1);
+  expect(fluxStepSeconds(1000)).toBe(0.4);
+  expect(fluxStepSeconds(4000)).toBe(0.1);
+  expect(fluxStepSeconds(20_000)).toBe(0.08);
+});
+
+test('a flux track is six evenly spaced LEDs from one square to the other', () => {
+  expect(
+    fluxCells({ from: { row: 5, column: 5 }, to: { row: 11, column: 11 } }),
+  ).toStrictEqual([
+    { row: 5, column: 5 },
+    { row: 6, column: 6 },
+    { row: 7, column: 7 },
+    { row: 8, column: 8 },
+    { row: 9, column: 9 },
+    { row: 10, column: 10 },
+  ]);
+});
+
+test('the battery/grid anti-diagonal never collides with the solar diagonal', () => {
+  const diagonal = fluxCells({
+    from: { row: 5, column: 5 },
+    to: { row: 11, column: 11 },
+  });
+  const antiDiagonal = fluxCells({
+    from: { row: 5, column: 10 },
+    to: { row: 11, column: 4 },
+  });
+  const taken = new Set(diagonal.map((c) => `${c.row}:${c.column}`));
+  for (const cell of antiDiagonal) {
+    expect(taken.has(`${cell.row}:${cell.column}`)).toBe(false);
+  }
+});
+
+test('energy formatting switches to kWh above 1000 Wh', () => {
+  expect(formatWh(740)).toBe('740 Wh');
+  expect(formatWh(12_400)).toBe('12.4 kWh');
+});
