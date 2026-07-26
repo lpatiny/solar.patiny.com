@@ -152,6 +152,7 @@ test('the compact payload stays well inside the ESP32 HTTP buffer', () => {
     ba: 21_299,
     bd: 10_230,
     mk: 11_069,
+    bc: 18_422,
     gr: 12_345,
     co: 12_345,
     ph: 12_345,
@@ -165,7 +166,7 @@ test('the compact payload stays well inside the ESP32 HTTP buffer', () => {
   };
   const encoded = JSON.stringify(widest);
   expect(encoded.length).toBeLessThan(200);
-  expect(Object.keys(widest)).toHaveLength(14);
+  expect(Object.keys(widest)).toHaveLength(15);
   // Every key is two characters, so adding a field can never silently bloat it.
   for (const key of Object.keys(widest)) expect(key).toHaveLength(2);
 });

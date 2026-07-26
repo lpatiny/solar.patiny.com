@@ -17,7 +17,12 @@ import {
   SOLAR_TO_HOME_TRACK,
   WALL_SIZE,
 } from './ledLayout.ts';
-import { ENERGY_SCALE, POWER_SCALE, formatWh } from './ledScale.ts';
+import {
+  ENERGY_SCALE,
+  POWER_SCALE,
+  formatWh,
+  fullThreshold,
+} from './ledScale.ts';
 import { useEnergyFlow } from './useEnergyFlow.ts';
 
 /** Panel colours, taken from the physical wall's firmware. */
@@ -211,6 +216,7 @@ export default function EnergyLedPanel() {
             scale={ENERGY_SCALE}
             colors={BYD_COLORS}
             stacked={{ value: marstekStoredWh, colors: MARSTEK_COLORS }}
+            fullValue={fullThreshold(data?.battery_capacity_wh ?? 0)}
           />
           <LedSquare
             origin={GRID_ORIGIN}
@@ -251,13 +257,14 @@ export default function EnergyLedPanel() {
           textAlign: 'center',
         }}
       >
-        Around a square: one LED = 500 W (1.25 kWh for the battery). Inside it:
-        one LED = 50 W (125 Wh). The battery counts only usable energy — the
-        reserve floor is left out, so empty really is dark — and splits in two
-        greens: the BYD share fills the ring first in pure green, the Marstek
-        share continues in turquoise. Below 1.25 kWh the Marstek share is too
-        small for a ring LED and only tints the centre. The blue dots march
-        faster as the transfer grows.
+        Around a square: one LED = 500 W (1 kWh for the battery). Inside it: one
+        LED = 50 W (100 Wh). The battery counts only usable energy — the reserve
+        floor is left out, so empty really is dark — and splits in two greens:
+        the BYD share fills the ring first in pure green, the Marstek share
+        continues in turquoise. Below 1 kWh the Marstek share is too small for a
+        ring LED and only tints the centre. The square lights up bright
+        throughout only within 1 % of full. The blue dots march faster as the
+        transfer grows.
       </p>
     </div>
   );

@@ -58,6 +58,7 @@ const CompactResponse = Type.Object(
     ba: Type.Number({ description: 'Usable stored energy (Wh).' }),
     bd: Type.Number({ description: "The BYD pack's share of ba (Wh)." }),
     mk: Type.Number({ description: "The Marstek fleet's share of ba (Wh)." }),
+    bc: Type.Number({ description: 'Usable capacity (Wh) across every pack.' }),
     gr: Type.Number({ description: 'Grid magnitude (W), either direction.' }),
     co: Type.Number({ description: 'Household consumption (W).' }),
     ph: Type.Number({ description: 'Solar → home (W).' }),

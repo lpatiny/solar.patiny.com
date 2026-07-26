@@ -23,10 +23,25 @@ export interface LedScale {
 /** Solar, consumption and grid squares: 500 W around, 50 W inside. */
 export const POWER_SCALE: LedScale = { ringUnit: 500, centerUnit: 50 };
 /**
- * The battery square holds energy: 1.25 kWh around, 125 Wh inside. A full ring
- * is 20 kWh, sized so the ~21.3 kWh fleet reads across almost the whole ring.
+ * The battery square holds energy: 1 kWh around, 100 Wh inside. A full ring plus
+ * centre is 16.9 kWh against ~18.4 kWh usable, so the top of the range runs off
+ * the LEDs — which is why the battery square is told where "full" is
+ * ({@link fullThreshold}) instead of inferring it from a filled ring.
  */
-export const ENERGY_SCALE: LedScale = { ringUnit: 1250, centerUnit: 125 };
+export const ENERGY_SCALE: LedScale = { ringUnit: 1000, centerUnit: 100 };
+
+/** Within this fraction of usable capacity the fleet counts as full. */
+const FULL_FRACTION = 0.99;
+
+/**
+ * The level at which the battery square lights completely: within 1 % of usable
+ * capacity, so it only ever reads full when the fleet really is.
+ * @param capacityWh - Usable capacity across every pack, in Wh.
+ * @returns The threshold in Wh, or undefined when the capacity is unknown.
+ */
+export function fullThreshold(capacityWh: number): number | undefined {
+  return capacityWh > 0 ? capacityWh * FULL_FRACTION : undefined;
+}
 
 /** How many ring and centre LEDs to light in one square. */
 export interface LedLevels {
@@ -41,18 +56,32 @@ export interface LedLevels {
 /**
  * Split a value into lit ring and centre LEDs, exactly as `paintSquare` does on
  * the panel: `ring = floor(value / ringUnit)` and the remainder fills the centre
- * in `centerUnit` steps. Past a full ring the square saturates and lights
- * completely, which is the panel's "off the scale" signal.
+ * in `centerUnit` steps.
+ *
+ * A saturated square lights completely, which is the panel's "this is the top of
+ * the scale" signal. Without `fullValue` that means going past a full ring — the
+ * power squares have no known maximum. With it — the battery, whose usable
+ * capacity the backend reports — the square saturates at that level and never
+ * from the ring alone, so it can run out of LEDs without claiming to be full.
  * @param value - The quantity to display (W for power, Wh for energy).
  * @param scale - What one ring LED and one centre LED are worth.
+ * @param fullValue - The level that counts as full, when it is known.
  * @returns The lit-LED counts and whether the square is saturated.
  */
-export function ledLevels(value: number, scale: LedScale): LedLevels {
+export function ledLevels(
+  value: number,
+  scale: LedScale,
+  fullValue?: number,
+): LedLevels {
   const safe = Math.max(value, 0);
-  const ring = Math.floor(safe / scale.ringUnit);
-  if (ring > RING_LED_COUNT) {
+  const full =
+    fullValue === undefined
+      ? Math.floor(safe / scale.ringUnit) > RING_LED_COUNT
+      : safe >= fullValue;
+  if (full) {
     return { ring: RING_LED_COUNT, center: CENTER_LED_COUNT, saturated: true };
   }
+  const ring = Math.min(Math.floor(safe / scale.ringUnit), RING_LED_COUNT);
   const remainder = safe - ring * scale.ringUnit;
   const center = Math.min(
     Math.floor(remainder / scale.centerUnit),
@@ -79,16 +108,18 @@ export interface StackedLedLevels extends LedLevels {
  * @param lowerValue - Amount contributed by the source drawn first.
  * @param upperValue - Amount contributed by the source stacked on top.
  * @param scale - What one ring LED and one centre LED are worth.
+ * @param fullValue - The total that counts as full, when it is known.
  * @returns The lit-LED counts plus where the two sources meet.
  */
 export function stackedLedLevels(
   lowerValue: number,
   upperValue: number,
   scale: LedScale,
+  fullValue?: number,
 ): StackedLedLevels {
   const lower = Math.max(lowerValue, 0);
   const upper = Math.max(upperValue, 0);
-  const levels = ledLevels(lower + upper, scale);
+  const levels = ledLevels(lower + upper, scale, fullValue);
   return {
     ...levels,
     lowerRing: Math.min(Math.round(lower / scale.ringUnit), levels.ring),

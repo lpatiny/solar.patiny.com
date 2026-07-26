@@ -220,6 +220,8 @@ export interface CompactEnergyFlowPayload {
   bd: number;
   /** The Marstek fleet's share of `ba` (Wh). */
   mk: number;
+  /** Usable capacity (Wh): the wall only reads "full" within 1 % of it. */
+  bc: number;
   /** Grid magnitude (W), either direction — the flux shows which way. */
   gr: number;
   /** Household consumption (W). */
@@ -259,6 +261,7 @@ export function collectCompactEnergyFlow(): CompactEnergyFlowPayload | null {
     ba: full.battery_stored_wh,
     bd: full.byd_stored_wh,
     mk: full.marstek_stored_wh,
+    bc: full.battery_capacity_wh,
     gr: full.grid_import_w + full.grid_export_w,
     co: full.consumption_w,
     ph: full.solar_to_home_w,

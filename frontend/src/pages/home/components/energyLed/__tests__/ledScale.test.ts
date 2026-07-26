@@ -7,6 +7,7 @@ import {
   centerCell,
   fluxStepSeconds,
   formatWh,
+  fullThreshold,
   ledLevels,
   ringCell,
   stackedLedLevels,
@@ -45,63 +46,82 @@ test('past a full ring the square saturates', () => {
   });
 });
 
-test('battery energy uses 1.25 kWh per ring LED and 125 Wh per centre LED', () => {
-  // 12 400 Wh = 9 ring LEDs (11.25 kWh) + 9 centre LEDs (1.125 kWh).
+test('battery energy uses 1 kWh per ring LED and 100 Wh per centre LED', () => {
+  // 12 400 Wh = 12 ring LEDs (12 kWh) + 4 centre LEDs (400 Wh).
   expect(ledLevels(12_400, ENERGY_SCALE)).toStrictEqual({
-    ring: 9,
-    center: 9,
+    ring: 12,
+    center: 4,
     saturated: false,
   });
-  // 7 000 Wh = 5 ring LEDs (6.25 kWh) + 6 centre LEDs (750 Wh).
+  // 7 000 Wh = 7 ring LEDs, nothing left for the centre.
   expect(ledLevels(7000, ENERGY_SCALE)).toStrictEqual({
-    ring: 5,
-    center: 6,
+    ring: 7,
+    center: 0,
     saturated: false,
   });
 });
 
-test('the usable fleet spans the ring without ever saturating', () => {
+test('the battery square only saturates within 1 % of usable capacity', () => {
+  const full = fullThreshold(18_422);
   // Empty means sitting on the reserve floors, which the API already subtracts.
-  expect(ledLevels(0, ENERGY_SCALE)).toStrictEqual({
+  expect(ledLevels(0, ENERGY_SCALE, full)).toStrictEqual({
     ring: 0,
     center: 0,
     saturated: false,
   });
-  // Full is 18 422 Wh usable (see batteryReserve.test.ts) against a 20 kWh ring.
-  expect(ledLevels(18_422, ENERGY_SCALE)).toStrictEqual({
-    ring: 14,
-    center: 7,
+  // 17 500 Wh runs out of LEDs — ring and centre both max out — but 95 % of the
+  // fleet is not full, so the square must not claim to be.
+  expect(ledLevels(17_500, ENERGY_SCALE, full)).toStrictEqual({
+    ring: 16,
+    center: 9,
     saturated: false,
+  });
+  // 18 422 Wh usable (see batteryReserve.test.ts) is full, and so is 1 % below.
+  expect(ledLevels(18_422, ENERGY_SCALE, full)).toStrictEqual({
+    ring: 16,
+    center: 9,
+    saturated: true,
+  });
+  expect(ledLevels(18_238, ENERGY_SCALE, full)?.saturated).toBe(true);
+  expect(ledLevels(18_200, ENERGY_SCALE, full)?.saturated).toBe(false);
+});
+
+test('an unknown capacity leaves the battery square unable to read full', () => {
+  expect(fullThreshold(0)).toBeUndefined();
+  // With no threshold it falls back to the power squares' rule: past a full ring.
+  expect(ledLevels(18_422, ENERGY_SCALE)).toStrictEqual({
+    ring: 16,
+    center: 9,
+    saturated: true,
   });
 });
 
 test('the battery ring is filled by the BYD first and the Marstek after it', () => {
-  // 10 230 Wh in the BYD (8.2 ring LEDs) plus 8 192 Wh of Marstek: 14 ring LEDs
-  // in all, the first 8 of them the BYD's, and the 922 Wh remainder is Marstek.
-  expect(stackedLedLevels(10_230, 8192, ENERGY_SCALE)).toStrictEqual({
-    ring: 14,
-    center: 7,
+  // 10 230 Wh in the BYD plus 1 178 Wh of Marstek: 11 ring LEDs in all, the
+  // first 10 of them the BYD's, and the 408 Wh remainder is Marstek.
+  expect(stackedLedLevels(10_230, 1178, ENERGY_SCALE)).toStrictEqual({
+    ring: 11,
+    center: 4,
     saturated: false,
-    lowerRing: 8,
+    lowerRing: 10,
     upperCenter: true,
   });
 });
 
 test('an empty Marstek fleet leaves the whole battery square in the BYD green', () => {
-  const levels = stackedLedLevels(6300, 0, ENERGY_SCALE);
-  expect(levels).toStrictEqual({
-    ring: 5,
-    center: 0,
+  expect(stackedLedLevels(6300, 0, ENERGY_SCALE)).toStrictEqual({
+    ring: 6,
+    center: 3,
     saturated: false,
-    lowerRing: 5,
+    lowerRing: 6,
     upperCenter: false,
   });
 });
 
 test('an empty BYD leaves the boundary at zero, so the ring is all Marstek', () => {
   expect(stackedLedLevels(0, 4300, ENERGY_SCALE)).toStrictEqual({
-    ring: 3,
-    center: 4,
+    ring: 4,
+    center: 3,
     saturated: false,
     lowerRing: 0,
     upperCenter: true,
@@ -109,8 +129,8 @@ test('an empty BYD leaves the boundary at zero, so the ring is all Marstek', () 
 });
 
 test('the stacked total lights exactly the same LEDs as the plain level', () => {
-  const stacked = stackedLedLevels(10_230, 8192, ENERGY_SCALE);
-  const plain = ledLevels(18_422, ENERGY_SCALE);
+  const stacked = stackedLedLevels(10_230, 1178, ENERGY_SCALE);
+  const plain = ledLevels(11_408, ENERGY_SCALE);
   expect(stacked.ring).toBe(plain.ring);
   expect(stacked.center).toBe(plain.center);
 });

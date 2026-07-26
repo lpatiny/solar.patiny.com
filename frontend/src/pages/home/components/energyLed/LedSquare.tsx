@@ -32,6 +32,8 @@ interface LedSquareProps {
   scale: LedScale;
   colors: LedColors;
   stacked?: LedStack;
+  /** The total that lights the square completely, when it is known. */
+  fullValue?: number;
 }
 
 /**
@@ -46,6 +48,7 @@ interface LedSquareProps {
  * @param root0.scale - What one ring LED and one centre LED are worth.
  * @param root0.colors - The lit and unlit colours for this quantity.
  * @param root0.stacked - A second quantity drawn on top, in its own colours.
+ * @param root0.fullValue - The total that lights the square completely.
  * @returns The square's LEDs.
  */
 export default function LedSquare({
@@ -54,32 +57,30 @@ export default function LedSquare({
   scale,
   colors,
   stacked,
+  fullValue,
 }: LedSquareProps) {
   const { ring, center, saturated, lowerRing, upperCenter } = stackedLedLevels(
     value,
     stacked?.value ?? 0,
     scale,
+    fullValue,
   );
   const upperColors = stacked?.colors ?? colors;
 
+  // Saturated is ring 16 + centre 9, so the same two loops light the whole
+  // square; only the centre changes shade, going bright to say "this is the top
+  // of the scale" rather than "here is the remainder".
   const litColors = new Map<string, string>();
-  if (saturated) {
-    for (let row = 0; row < SQUARE_SIDE; row++) {
-      for (let column = 0; column < SQUARE_SIDE; column++) {
-        litColors.set(`${row}:${column}`, colors.high);
-      }
-    }
-  } else {
-    for (let index = 0; index < Math.min(ring, RING_LED_COUNT); index++) {
-      const cell = ringCell(index);
-      const lit = index < lowerRing ? colors.high : upperColors.high;
-      litColors.set(`${cell.row}:${cell.column}`, lit);
-    }
-    const centerColor = upperCenter ? upperColors.low : colors.low;
-    for (let index = 0; index < Math.min(center, CENTER_LED_COUNT); index++) {
-      const cell = centerCell(index);
-      litColors.set(`${cell.row}:${cell.column}`, centerColor);
-    }
+  for (let index = 0; index < Math.min(ring, RING_LED_COUNT); index++) {
+    const cell = ringCell(index);
+    const lit = index < lowerRing ? colors.high : upperColors.high;
+    litColors.set(`${cell.row}:${cell.column}`, lit);
+  }
+  const centerSource = upperCenter ? upperColors : colors;
+  const centerColor = saturated ? centerSource.high : centerSource.low;
+  for (let index = 0; index < Math.min(center, CENTER_LED_COUNT); index++) {
+    const cell = centerCell(index);
+    litColors.set(`${cell.row}:${cell.column}`, centerColor);
   }
 
   const leds = [];
