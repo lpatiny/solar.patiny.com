@@ -69,18 +69,30 @@ export default function LedSquare({
 
   // Saturated is ring 16 + centre 9, so the same two loops light the whole
   // square; only the centre changes shade, going bright to say "this is the top
-  // of the scale" rather than "here is the remainder".
+  // of the scale" rather than "here is the remainder". A stacked square has no
+  // boundary left to draw once it is full, so it alternates the two colours
+  // instead: a uniformly lit square says "at least a full ring", the
+  // checkerboard says the whole thing is genuinely full.
   const litColors = new Map<string, string>();
-  for (let index = 0; index < Math.min(ring, RING_LED_COUNT); index++) {
-    const cell = ringCell(index);
-    const lit = index < lowerRing ? colors.high : upperColors.high;
-    litColors.set(`${cell.row}:${cell.column}`, lit);
-  }
-  const centerSource = upperCenter ? upperColors : colors;
-  const centerColor = saturated ? centerSource.high : centerSource.low;
-  for (let index = 0; index < Math.min(center, CENTER_LED_COUNT); index++) {
-    const cell = centerCell(index);
-    litColors.set(`${cell.row}:${cell.column}`, centerColor);
+  if (saturated && stacked) {
+    for (let row = 0; row < SQUARE_SIDE; row++) {
+      for (let column = 0; column < SQUARE_SIDE; column++) {
+        const lit = (row + column) % 2 === 0 ? colors.high : upperColors.high;
+        litColors.set(`${row}:${column}`, lit);
+      }
+    }
+  } else {
+    for (let index = 0; index < Math.min(ring, RING_LED_COUNT); index++) {
+      const cell = ringCell(index);
+      const lit = index < lowerRing ? colors.high : upperColors.high;
+      litColors.set(`${cell.row}:${cell.column}`, lit);
+    }
+    const centerSource = upperCenter ? upperColors : colors;
+    const centerColor = saturated ? centerSource.high : centerSource.low;
+    for (let index = 0; index < Math.min(center, CENTER_LED_COUNT); index++) {
+      const cell = centerCell(index);
+      litColors.set(`${cell.row}:${cell.column}`, centerColor);
+    }
   }
 
   const leds = [];

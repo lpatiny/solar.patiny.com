@@ -266,9 +266,9 @@ export default function EnergyLedPanel() {
         floor is left out, so empty really is dark — and splits in two greens:
         the BYD share fills the ring first in pure green, the Marstek share
         continues in turquoise. Below 1 kWh the Marstek share is too small for a
-        ring LED and only tints the centre. The square lights up bright
-        throughout only within 1 % of full. The blue dots march faster as the
-        transfer grows.
+        ring LED and only tints the centre. Within 1 % of full the square drops
+        the split for a green/turquoise checkerboard. The blue dots march faster
+        as the transfer grows.
       </p>
     </div>
   );
