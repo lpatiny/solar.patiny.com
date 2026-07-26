@@ -27,17 +27,19 @@ const SOLAR_COLORS: LedColors = {
   background: '#101000',
 };
 // The battery square carries two greens: the BYD share of the level fills the
-// ring first in pure green, the Marstek share continues in mint, so the boundary
-// says which pack is holding the charge.
+// ring first in pure green, the Marstek share continues in turquoise, so the
+// boundary says which pack is holding the charge. The two hues are far apart on
+// purpose — the dim centre LEDs have no neighbour of the other colour to be
+// judged against, so a close pair reads as one green.
 const BYD_COLORS: LedColors = {
   high: '#00ff00',
   low: '#005000',
   background: '#001000',
 };
 const MARSTEK_COLORS: LedColors = {
-  high: '#00ff80',
-  low: '#005028',
-  background: '#001008',
+  high: '#00ffd0',
+  low: '#005041',
+  background: '#00100d',
 };
 const GRID_COLORS: LedColors = {
   high: '#ffffff',
@@ -149,7 +151,13 @@ export default function EnergyLedPanel() {
           title="Battery level"
           value={formatWh(storedWh)}
           sub={`${Math.round(data?.battery_soc_pct ?? 0)} % · ${batterySub}`}
-          extra={`BYD ${formatWh(bydStoredWh)} · Marstek ${formatWh(marstekStoredWh)}`}
+          extra={[
+            { text: `BYD ${formatWh(bydStoredWh)}`, color: BYD_COLORS.high },
+            {
+              text: `Marstek ${formatWh(marstekStoredWh)}`,
+              color: MARSTEK_COLORS.high,
+            },
+          ]}
           color={BYD_COLORS.high}
         />
 
@@ -247,8 +255,9 @@ export default function EnergyLedPanel() {
         one LED = 50 W (125 Wh). The battery counts only usable energy — the
         reserve floor is left out, so empty really is dark — and splits in two
         greens: the BYD share fills the ring first in pure green, the Marstek
-        share continues in mint. The blue dots march faster as the transfer
-        grows.
+        share continues in turquoise. Below 1.25 kWh the Marstek share is too
+        small for a ring LED and only tints the centre. The blue dots march
+        faster as the transfer grows.
       </p>
     </div>
   );

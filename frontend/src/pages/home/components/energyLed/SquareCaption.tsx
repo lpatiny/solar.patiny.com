@@ -7,8 +7,11 @@ interface SquareCaptionProps {
   value: string;
   /** Extra state line under the value, e.g. "charging 1.2 kW". */
   sub?: string;
-  /** A second state line under {@link sub}, e.g. how a level splits per pack. */
-  extra?: string;
+  /**
+   * A second state line under {@link sub}, split into parts drawn in their own
+   * colour — a level shared by two packs doubles as the wall's colour legend.
+   */
+  extra?: Array<{ text: string; color: string }>;
   /** The square's lit colour, used for the value. */
   color: string;
 }
@@ -78,9 +81,18 @@ export default function SquareCaption({
           x={x}
           y={extraY}
           textAnchor="middle"
-          style={{ fill: 'var(--text-secondary)', fontSize: 10 }}
+          style={{
+            fill: 'var(--text-secondary)',
+            fontSize: 11,
+            fontWeight: 600,
+          }}
         >
-          {extra}
+          {extra.map((part, index) => (
+            <tspan key={part.text} style={{ fill: part.color }}>
+              {index > 0 ? ' · ' : ''}
+              {part.text}
+            </tspan>
+          ))}
         </text>
       )}
     </g>
