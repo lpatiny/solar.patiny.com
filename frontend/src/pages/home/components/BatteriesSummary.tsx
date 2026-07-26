@@ -3,11 +3,13 @@ import { Icon } from '@blueprintjs/core';
 import type { Device, DeviceLive } from '../../../types.ts';
 
 import BatteryCell from './BatteryCell.tsx';
+import HelpTip from './HelpTip.tsx';
 import {
   batteryFlow,
   deviceCellData,
   formatPower,
   usableBattery,
+  usableScaleHelp,
 } from './batteryStatus.ts';
 
 interface BatteriesSummaryProps {
@@ -102,8 +104,17 @@ export default function BatteriesSummary({
               {totalVisual.label}
               {netFlow !== 'idle' && ` · ${formatPower(netWatts)}`}
             </div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>
+            <div
+              className="help-label"
+              style={{ fontSize: 20, fontWeight: 700, justifyContent: 'end' }}
+            >
               {totalStored.toFixed(1)} / {totalCapacity.toFixed(1)} kWh
+              <HelpTip
+                content={
+                  'Usable energy across every pack: each one’s reserve ' +
+                  'floor is left out, so a fleet parked on its floors reads 0.'
+                }
+              />
             </div>
           </div>
           <Icon icon={totalVisual.icon} size={32} color={totalVisual.color} />
@@ -120,6 +131,7 @@ export default function BatteriesSummary({
           watts={homeFlow.watts}
           subtitle={homeHost}
           capacityKwh={home.capacityKwh}
+          scaleHelp={usableScaleHelp(homeSoc, homeCapacityKwh, homeReservePct)}
         />
         {devices.map((device) => {
           const data = deviceCellData(device, liveById[device.id] ?? null);
@@ -139,6 +151,11 @@ export default function BatteriesSummary({
               watts={data.watts}
               subtitle={data.subtitle}
               capacityKwh={usable.capacityKwh}
+              scaleHelp={usableScaleHelp(
+                data.soc,
+                data.capacityKwh,
+                marstekReservePct,
+              )}
               onClick={onOpen}
             />
           );

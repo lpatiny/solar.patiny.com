@@ -1,9 +1,10 @@
 import type { IconName } from '@blueprintjs/core';
-import { Icon, Tag } from '@blueprintjs/core';
+import { Icon, Tag, Tooltip } from '@blueprintjs/core';
 import type { ReactNode } from 'react';
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
 
+import HelpTip from './HelpTip.tsx';
 import type { BatteryFlow } from './batteryStatus.ts';
 import {
   batteryEtaHours,
@@ -20,6 +21,11 @@ interface BatteryCellProps {
   watts: number;
   subtitle: string | null;
   capacityKwh: number | null;
+  /**
+   * What the SOC and energy figures are measured against, shown on the dial and
+   * next to the energy line. Omit when the values are the raw ones.
+   */
+  scaleHelp?: string;
   /** When true, render a solid (non-minimal) status tag (e.g. selected card). */
   highlighted?: boolean;
   /** When provided the cell becomes a clickable button. */
@@ -57,6 +63,7 @@ function socColor(soc: number): string {
  * @param root0.watts - Absolute power magnitude in watts.
  * @param root0.subtitle - Secondary line (e.g. IP address).
  * @param root0.capacityKwh - Battery capacity in kWh, or null.
+ * @param root0.scaleHelp - What the SOC and energy figures are measured against.
  * @param root0.highlighted - Render a solid status tag when selected.
  * @param root0.onClick - Makes the cell a clickable button when provided.
  * @returns The battery cell.
@@ -70,6 +77,7 @@ export default function BatteryCell({
   watts,
   subtitle,
   capacityKwh,
+  scaleHelp,
   highlighted = false,
   onClick,
 }: BatteryCellProps) {
@@ -95,6 +103,27 @@ export default function BatteryCell({
       ? null
       : `${flow === 'charging' ? 'Full' : 'Empty'} in ${formatDuration(etaHours)}`;
 
+  const dial = (
+    <div
+      style={{
+        width: 64,
+        flexShrink: 0,
+        cursor: scaleHelp ? 'help' : undefined,
+      }}
+    >
+      <CircularProgressbar
+        value={soc ?? 0}
+        text={soc === null ? '–' : `${Math.round(soc)}%`}
+        styles={buildStyles({
+          pathColor: color,
+          textColor: color,
+          trailColor: 'var(--border)',
+          textSize: '24px',
+        })}
+      />
+    </div>
+  );
+
   const content: ReactNode = (
     <>
       <div
@@ -116,18 +145,20 @@ export default function BatteryCell({
       </div>
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-        <div style={{ width: 64, flexShrink: 0 }}>
-          <CircularProgressbar
-            value={soc ?? 0}
-            text={soc === null ? '–' : `${Math.round(soc)}%`}
-            styles={buildStyles({
-              pathColor: color,
-              textColor: color,
-              trailColor: 'var(--border)',
-              textSize: '24px',
-            })}
-          />
-        </div>
+        {scaleHelp ? (
+          <Tooltip
+            compact
+            content={
+              <span style={{ display: 'block', maxWidth: 260 }}>
+                {scaleHelp}
+              </span>
+            }
+          >
+            {dial}
+          </Tooltip>
+        ) : (
+          dial
+        )}
         <div style={{ flex: 1, fontSize: 12, minWidth: 0 }}>
           {subtitle && (
             <div
@@ -145,8 +176,12 @@ export default function BatteryCell({
             {flowText}
           </div>
           {energyText && (
-            <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
+            <div
+              className={scaleHelp && 'help-label'}
+              style={{ marginTop: 4, color: 'var(--text-secondary)' }}
+            >
               {energyText}
+              {scaleHelp && <HelpTip content={scaleHelp} />}
             </div>
           )}
           {etaText && (

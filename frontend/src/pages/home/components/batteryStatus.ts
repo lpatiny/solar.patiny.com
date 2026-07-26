@@ -110,6 +110,31 @@ export function usableBattery(
 }
 
 /**
+ * Explain the scale every displayed battery figure is on: they are re-expressed
+ * over the usable range by {@link usableBattery}, so a pack parked on its
+ * reserve floor reads 0 % — alarming next to a floor it is never supposed to
+ * cross. Quoting the raw SOC alongside makes the two numbers reconcilable.
+ * @param soc - Raw state of charge in percent, or null when unknown.
+ * @param capacityKwh - Raw total capacity in kWh, or null when unknown.
+ * @param reservePct - Reserve floor in percent.
+ * @returns A sentence for a tooltip next to the displayed percentage.
+ */
+export function usableScaleHelp(
+  soc: number | null,
+  capacityKwh: number | null,
+  reservePct: number,
+): string {
+  const scale =
+    `Usable charge only: 0 % is the ${Math.round(reservePct)} % reserve floor, ` +
+    'which is never discharged, and 100 % is full.';
+  if (soc === null) return scale;
+  const raw = `The pack itself reads ${Math.round(soc)} %`;
+  if (capacityKwh === null) return `${scale} ${raw}.`;
+  const stored = ((soc / 100) * capacityKwh).toFixed(2);
+  return `${scale} ${raw} (${stored} of ${capacityKwh.toFixed(2)} kWh).`;
+}
+
+/**
  * Sum the energy currently stored across the home battery and every Marstek
  * device, in kWh. Uses raw (reserve-included) stored energy so the total matches
  * the per-device figures shown on the battery cards.

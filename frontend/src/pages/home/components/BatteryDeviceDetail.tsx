@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react';
 import type { Device, DeviceLive } from '../../../types.ts';
 
 import BatteryHistoryChart from './BatteryHistoryChart.tsx';
+import HelpTip from './HelpTip.tsx';
 import {
   batteryEtaHours,
   batteryFlow,
   formatDuration,
   usableBattery,
+  usableScaleHelp,
 } from './batteryStatus.ts';
 
 interface BatteryDeviceDetailProps {
@@ -25,11 +27,23 @@ function fmt(value: number | null, unit: string, digits = 1): string {
   return `${value.toFixed(digits)} ${unit}`.trim();
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  help,
+}: {
+  label: string;
+  value: string;
+  help?: string;
+}) {
   return (
     <div style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-      <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+      <div
+        className={help && 'help-label'}
+        style={{ color: 'var(--text-secondary)', fontSize: 11 }}
+      >
         {label}
+        {help && <HelpTip content={help} />}
       </div>
       <div style={{ fontSize: 15, fontWeight: 600 }}>{value}</div>
     </div>
@@ -74,6 +88,11 @@ export default function BatteryDeviceDetail({
 
   const values = live?.values ?? null;
   const usable = usableBattery(
+    values?.soc_pct ?? null,
+    values?.energy_kwh ?? null,
+    reservePct,
+  );
+  const scaleHelp = usableScaleHelp(
     values?.soc_pct ?? null,
     values?.energy_kwh ?? null,
     reservePct,
@@ -127,7 +146,11 @@ export default function BatteryDeviceDetail({
             marginTop: 12,
           }}
         >
-          <Metric label="State of charge" value={fmt(usable.soc, '%', 0)} />
+          <Metric
+            label="State of charge"
+            value={fmt(usable.soc, '%', 0)}
+            help={scaleHelp}
+          />
           <Metric
             label="Battery voltage"
             value={fmt(values?.voltage_v ?? null, 'V', 2)}
@@ -152,6 +175,7 @@ export default function BatteryDeviceDetail({
           />
           <Metric
             label="Energy stored"
+            help={scaleHelp}
             value={
               usable.capacityKwh == null
                 ? '—'

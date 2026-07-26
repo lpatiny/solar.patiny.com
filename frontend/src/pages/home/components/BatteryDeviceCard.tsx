@@ -3,7 +3,11 @@ import { useEffect, useState } from 'react';
 import type { Device, DeviceLive } from '../../../types.ts';
 
 import BatteryCell from './BatteryCell.tsx';
-import { deviceCellData, usableBattery } from './batteryStatus.ts';
+import {
+  deviceCellData,
+  usableBattery,
+  usableScaleHelp,
+} from './batteryStatus.ts';
 
 interface BatteryDeviceCardProps {
   device: Device;
@@ -63,6 +67,7 @@ export default function BatteryDeviceCard({
       watts={data.watts}
       subtitle={data.subtitle}
       capacityKwh={usable.capacityKwh}
+      scaleHelp={usableScaleHelp(data.soc, data.capacityKwh, reservePct)}
       highlighted={selected}
       onClick={onSelect}
     />

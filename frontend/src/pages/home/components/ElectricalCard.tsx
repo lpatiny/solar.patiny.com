@@ -2,7 +2,8 @@ import { Intent, NonIdealState, ProgressBar, Tag } from '@blueprintjs/core';
 
 import type { RealtimeData } from '../HomePage.tsx';
 
-import { usableBattery } from './batteryStatus.ts';
+import HelpTip from './HelpTip.tsx';
+import { usableBattery, usableScaleHelp } from './batteryStatus.ts';
 
 interface ElectricalCardProps {
   realtime: RealtimeData | null;
@@ -46,10 +47,12 @@ function ParamRow({
   label,
   value,
   color,
+  help,
 }: {
   label: string;
   value: string;
   color?: string;
+  help?: string;
 }) {
   return (
     <div
@@ -61,8 +64,12 @@ function ParamRow({
         borderBottom: '1px solid var(--border)',
       }}
     >
-      <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+      <span
+        className={help && 'help-label'}
+        style={{ color: 'var(--text-secondary)', fontSize: 12 }}
+      >
         {label}
+        {help && <HelpTip content={help} />}
       </span>
       <span
         style={{ fontWeight: 600, fontSize: 13, color: color ?? 'inherit' }}
@@ -279,6 +286,11 @@ export default function ElectricalCard({
               label="State of charge"
               value={fmt(usableSoc, 1, '%')}
               color="var(--battery)"
+              help={usableScaleHelp(
+                realtime?.battery_soc ?? null,
+                null,
+                reservePct,
+              )}
             />
             <ParamRow
               label="Charging power"

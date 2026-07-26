@@ -1,5 +1,7 @@
 import type { NumericInputProps } from '@blueprintjs/core';
-import { Button, Icon, Intent, NumericInput, Tooltip } from '@blueprintjs/core';
+import { Button, Intent, NumericInput } from '@blueprintjs/core';
+
+import HelpTip from '../HelpTip.tsx';
 
 import { unitStyle } from './configStyles.ts';
 
@@ -28,15 +30,7 @@ export function HelpLabel({
   return (
     <span className="help-label" style={style}>
       {text}
-      <Tooltip
-        compact
-        content={
-          <span style={{ maxWidth: 260, display: 'block' }}>{help}</span>
-        }
-        className="help-icon"
-      >
-        <Icon icon="help" size={12} style={{ cursor: 'help', opacity: 0.7 }} />
-      </Tooltip>
+      <HelpTip content={help} />
     </span>
   );
 }
