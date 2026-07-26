@@ -95,7 +95,11 @@ export default function EnergyLedPanel() {
   // so flip the track when the grid is charging the batteries.
   const batteryGridTrack =
     gridToBattery > batteryToGrid
-      ? { from: BATTERY_GRID_TRACK.to, to: BATTERY_GRID_TRACK.from }
+      ? {
+          ...BATTERY_GRID_TRACK,
+          from: BATTERY_GRID_TRACK.to,
+          to: BATTERY_GRID_TRACK.from,
+        }
       : BATTERY_GRID_TRACK;
 
   const batterySub =

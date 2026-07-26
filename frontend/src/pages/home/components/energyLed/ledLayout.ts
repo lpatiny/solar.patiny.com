@@ -30,6 +30,13 @@ export const CONSUMPTION_ORIGIN: SquareOrigin = { row: 11, column: 11 };
 export interface FluxTrack {
   from: SquareOrigin;
   to: SquareOrigin;
+  /**
+   * Where the link's power reading sits, in wall coordinates — beside the dots,
+   * in a gap no LED occupies (fractional on purpose, they are hand-placed).
+   * Only the battery links carry one: the other three are the difference between
+   * two captions already on screen, so a chip there is noise.
+   */
+  label?: SquareOrigin;
 }
 
 /** Grid → consumption, along the bottom. */
@@ -46,6 +53,7 @@ export const SOLAR_TO_GRID_TRACK: FluxTrack = {
 export const SOLAR_TO_BATTERY_TRACK: FluxTrack = {
   from: { row: 2, column: 5 },
   to: { row: 2, column: 11 },
+  label: { row: 1.05, column: 8 },
 };
 /** Solar → consumption, across the main diagonal. */
 export const SOLAR_TO_HOME_TRACK: FluxTrack = {
@@ -56,6 +64,7 @@ export const SOLAR_TO_HOME_TRACK: FluxTrack = {
 export const BATTERY_TO_HOME_TRACK: FluxTrack = {
   from: { row: 5, column: 13 },
   to: { row: 11, column: 13 },
+  label: { row: 8, column: 11.65 },
 };
 /**
  * Battery ↔ grid, across the anti-diagonal. Absent from the panel firmware,
@@ -65,6 +74,7 @@ export const BATTERY_TO_HOME_TRACK: FluxTrack = {
 export const BATTERY_GRID_TRACK: FluxTrack = {
   from: { row: 5, column: 10 },
   to: { row: 11, column: 4 },
+  label: { row: 6.45, column: 8.1 },
 };
 
 /**
@@ -73,7 +83,9 @@ export const BATTERY_GRID_TRACK: FluxTrack = {
  * @param track - The link's endpoints, in wall coordinates.
  * @returns One position per LED, in travel order.
  */
-export function fluxCells(track: FluxTrack): SquareOrigin[] {
+export function fluxCells(
+  track: Pick<FluxTrack, 'from' | 'to'>,
+): SquareOrigin[] {
   const rowStep = (track.to.row - track.from.row) / 6;
   const columnStep = (track.to.column - track.from.column) / 6;
   const cells: SquareOrigin[] = [];
