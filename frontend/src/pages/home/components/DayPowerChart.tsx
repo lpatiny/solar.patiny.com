@@ -173,6 +173,19 @@ function niceAxisMax(value: number): number {
   return Math.max(500, Math.ceil(value / 500) * 500);
 }
 
+const FORECAST_SUFFIX = '_forecast';
+
+/**
+ * The legend id a series belongs to: a forecast line shares the legend entry of
+ * the actual series it extends, so toggling it hides both.
+ * @param serieId
+ */
+function legendIdOf(serieId: string): string {
+  return serieId.endsWith(FORECAST_SUFFIX)
+    ? serieId.slice(0, -FORECAST_SUFFIX.length)
+    : serieId;
+}
+
 export default function DayPowerChart() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [data, setData] = useState<ReadingPoint[]>([]);
@@ -185,6 +198,8 @@ export default function DayPowerChart() {
   // while hovering the chart. < 1 magnifies the traces (zoom in), > 1 shrinks
   // them (zoom out). Reset to 1 on a new day or via "Reset zoom".
   const [yZoom, setYZoom] = useState(1);
+  // Series hidden by clicking their legend entry; kept across day navigation.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const chartRef = useRef<HTMLDivElement>(null);
 
   const today = new Date();
@@ -307,7 +322,16 @@ export default function DayPowerChart() {
     setYZoom(1);
   }, []);
 
-  const { series: balanceSeries, yMax: balanceYMax } = useMemo(
+  const toggleId = useCallback((id: string) => {
+    setHiddenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const { series: balanceSeries } = useMemo(
     () =>
       buildPowerBalanceSeries(data, batteries, batteryHistoryById, zoomRange),
     [data, batteries, batteryHistoryById, zoomRange],
@@ -329,16 +353,26 @@ export default function DayPowerChart() {
     });
   }, [isToday, forecast, data, zoomRange]);
 
+  const visibleSeries = useMemo(
+    () =>
+      [...balanceSeries, ...forecastSeries].filter(
+        (serie) => !hiddenIds.has(legendIdOf(serie.id)),
+      ),
+    [balanceSeries, forecastSeries, hiddenIds],
+  );
+
+  // Fit the axis to what is actually drawn, so hiding a large series (e.g. a
+  // spiky grid trace) rescales the remaining ones instead of leaving them flat.
   const axisMax = useMemo(() => {
-    let raw = balanceYMax;
-    for (const serie of forecastSeries) {
+    let raw = 0;
+    for (const serie of visibleSeries) {
       for (const point of serie.data) {
         const magnitude = Math.abs(point.y);
         if (magnitude > raw) raw = magnitude;
       }
     }
     return niceAxisMax(raw);
-  }, [balanceYMax, forecastSeries]);
+  }, [visibleSeries]);
 
   const scaledAxisMax = axisMax * yZoom;
 
@@ -351,11 +385,6 @@ export default function DayPowerChart() {
       scaledAxisMax,
     ],
     [scaledAxisMax],
-  );
-
-  const allSeries = useMemo(
-    () => [...balanceSeries, ...forecastSeries],
-    [balanceSeries, forecastSeries],
   );
 
   const seriesMeta = useMemo(
@@ -486,7 +515,7 @@ export default function DayPowerChart() {
       ) : (
         <div ref={chartRef} style={{ height: 280 }}>
           <ResponsiveLine
-            data={allSeries}
+            data={visibleSeries}
             theme={nivoTheme}
             colors={(d) => (d as unknown as { color: string }).color}
             margin={{ top: 10, right: 60, bottom: 50, left: 70 }}
@@ -531,10 +560,11 @@ export default function DayPowerChart() {
                 itemHeight: 14,
                 symbolSize: 10,
                 symbolShape: 'circle',
+                onClick: (datum) => toggleId(datum.id as string),
                 data: seriesMeta.map((s) => ({
                   id: s.id,
                   label: s.label,
-                  color: s.color,
+                  color: hiddenIds.has(s.id) ? '#334155' : s.color,
                 })),
               },
             ]}
